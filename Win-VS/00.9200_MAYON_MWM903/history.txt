@@ -1,0 +1,386 @@
+Date	Time    Author  Update		Marker			Description
+=======================================================================================================================
+080624	1652	Chi-Lun	Task.h					Add usbPerfTask
+			usbdev.c				undefine USB_TIMEOUT
+			usbdev.h				define USB_TIMEOUT
+			usbmsc.c				Add usbPerfTask
+								Add usbPerfSDWrite
+								Add usbPerfUsbSend
+-----------------------------------------------------------------------------------------------------------------------
+060427	1429    BJ      					Created
+-----------------------------------------------------------------------------------------------------------------------
+060428	1104    BJ      sys.c		/* BJ 0428 S */		Capture break image. 
+			isu.c		/* BJ 0428 E */		(isu complete in preview and change to capture
+								==> the count of sem is not zero)
+-----------------------------------------------------------------------------------------------------------------------
+060505	1523	BJ	idu.c		/* BJ 0505 S */		Add the UI feature
+			iduapi.h	/* BJ 0505 E */		(Show the OSD on LCD)
+			uimenu.h
+			ui.c
+-----------------------------------------------------------------------------------------------------------------------
+060512	0833	BJ	ui.c		/* BJ 0512*/		Correct action : clear OSD function
+			uiact.c		/* BJ 0512*/		(Disable the OSD)
+-----------------------------------------------------------------------------------------------------------------------
+060523	2021	BJ	exif.c		/*BJ 0523 S*/		Add JPEG Playback mode
+			idu.c		/*BJ 0523 E*/
+			jpeg.c
+			board.h
+			iduapi.h
+			isuapi.h
+			jpegapi.h
+			isu.h
+			jpeg.h
+			jpegreg.h
+
+-----------------------------------------------------------------------------------------------------------------------
+060530	1330	BJ	asf.c		/*BJ 0530 S*/		Add MPEG4 Encode mode (From twokey)
+			int_handler.c	/*BJ 0530 E*/
+			idu.c
+			asfapi.h
+			gpioapi.h
+			iduapi.h
+			ipuapi.h
+			isuapi.h
+			mp4api.h
+			siuapi.h
+			ipu.c
+			isu.c
+			mp4.c
+			mpeg4reg.h
+			mpeg4.c
+			siu.c
+			sys.c
+-----------------------------------------------------------------------------------------------------------------------
+060601	1000	CY	os_cpu_a.s	/*CY 0601 S*/		Solve problem of FIQ context switch.	
+			os_mbox.c	/*CY 0601 E*/
+			os_mutex.c
+			os_q.c
+			os_sem.c
+			general.h				Compile option.
+			dcf.c					Flash memory selection.
+			dcffs.c
+			command.c			
+			shelltask.c	
+			exif.c					Overwrite SOS of JFIF.
+			fs_clib.h				Speedup C library of file system.
+			clibmisc.c				
+			fat_out.c				Speedup sector loop of file write.
+			fs_conf.h				Software read cache of file system.
+			sdcreg.h				SD clock and IO initialization.
+			sdcfs.c
+			sdc.c					SD check write error. 
+			smcreg.h				NAND gate flash clock and IO initialization.
+			smc.c
+			apimisc.c				NAND gate flash write back buffer.
+			smcmap.c
+-----------------------------------------------------------------------------------------------------------------------			
+060609	1130	BJ      jpeg.c          /*BJ 0609 S*/           Slove the preview mode to playback mode problem
+                        exif.c          /*BJ 0609 E*/
+-----------------------------------------------------------------------------------------------------------------------
+060612  1500    TK      asf.c          				Slove continue to encoding the mpeg4 problem
+			siu.c 					Slove the problem in capture mode
+			mpeg4.c		/*TK 0612 S*/		Add the function for mpeg4 encoding
+			moeg4reg.h		
+-----------------------------------------------------------------------------------------------------------------------							
+060613	1600	CY	asf.c		/*CY 0613 S*/		Refresh MPEG4 task state after each run	
+			mp4.c		/*CY 0613 E*/		Add control of video capture start and stop 
+			mpeg4.c
+			gpio.c
+			sys.c		
+-----------------------------------------------------------------------------------------------------------------------			
+060619	1400	TK	mpeg4.c        /* TK 0619 S*/           Add isu_frame_count to control the mpeg4enc start coding
+			isu.c	       /* TK 0619 E*/           modify align(32) to align(256) for mpeg4 pre-refernece & construct frames
+			chipsetpintwokey0517.pof                The updated frimware is verified in this firmware file 
+-----------------------------------------------------------------------------------------------------------------------
+060621	1100	CY	exif.c		/*CY 0621 S*/		Solve decoding buffer overflow problem.	
+			fat_in.c	/*CY 0621 E*/		Speedup sector loop of file read.
+-----------------------------------------------------------------------------------------------------------------------	
+060629	1400	CY	exif.c		/*CY 0629 S*/		Process condition of storage full.	
+			asf.c	        /*CY 0629 E*/		Capture time limit according to buffer size.
+			mp4.c
+-----------------------------------------------------------------------------------------------------------------------										
+060704	1100	Peter	avi.c			Let MPEG-4 encoder support AVI file format.	
+                        avi.h
+                        aviapi.h
+			iis.c           /* Peter 0704 */ /*Peter 0704 S*/   Modify iisTask() for AVI file format.
+			general.h       /* Peter 0704 */                    Add AVI_CONTAINER definition.
+			main.c          /* Peter 0704 */ /*Peter 0704 E*/   Add aviInit() function.
+			mpeg4.c	        /* Peter 0704 */        	        Modify videoHeader and set Vop_Type to global variable.
+			sys.c           /* Peter 0704 */ /*Peter 0704 S*/   Modify sysCaptureVideo() for support AVI format.
+			uiact.c         /* Peter 0704 */ /*Peter 0704 S*/   Modify uiMenuSetVideoSize() for support AVI format.
+-----------------------------------------------------------------------------------------------------------------------										
+060707	1700	Peter	asf.c       /* Peter: 0707 */   Rename mpeg4GetVideoHeader() to mpeg4PutVolHeader().
+                        avi.c       /* Peter: 0707 */ /*Peter 0707 S*/  Rename mpeg4GetVideoHeader() to mpeg4PutVolHeader() and support MPEG4 playback.
+                        mpeg4api.h  /* Peter: 0707 */ /*Peter 0707 E*/  Rename mpeg4GetVideoHeader() to mpeg4PutVolHeader() and support MPEG4 playback.
+                        isu.c       /*Peter 0707 S*/    Support MPEG4 playback.
+                        mp4.c       /* Peter: 0707 */   Rename mpeg4GetVideoHeader() to mpeg4PutVolHeader().
+                        mpeg4.c     /* Peter: 0707 */ /*Peter 0707 S*/  Rename mpeg4GetVideoHeader() to mpeg4PutVolHeader() and support MPEG4 playback.
+                        mpeg4.h     /*Peter 0707 S*/    Support MPEG4 playback.
+                        sys.c       /* Peter: 0707 */   Support aviReadFile().
+-----------------------------------------------------------------------------------------------------------------------										
+060711	2200	Peter	asf.c       /* Peter: 0711 */   Rename mpeg4PutVolHeader() to mpeg4EncodeVolHeader().
+                        avi.c       /* Peter: 0711 */ /*Peter 0711 S*/  
+                                                        Rename mpeg4PutVolHeader() to mpeg4EncodeVolHeader().
+                                                        Rename mpeg4GetVolHeader() to mpeg4DecodeVolHeader().
+                                                        Fix bugs for M$ MediaPlayer 6.4 AVI file playback.
+                        mpeg4api.h  /* Peter: 0711 */   Rename mpeg4PutVolHeader() to mpeg4EncodeVolHeader(). 
+                                                        Rename mpeg4GetVolHeader() to mpeg4DecodeVolHeader().
+                        mp4.c       /* Peter: 0711 */   Rename mpeg4PutVolHeader() to mpeg4EncodeVolHeader().
+                        mpeg4.c     /* Peter: 0711 */ /*Peter 0711 S*/  
+                                                        Rename mpeg4PutVolHeader() to mpeg4EncodeVolHeader(). 
+                                                        Rename mpeg4GetVolHeader() to mpeg4DecodeVolHeader().
+-----------------------------------------------------------------------------------------------------------------------										
+060712  1330    Twokey  siuapi.h
+                        siu.h
+                        siu.c        /* TK: 0712  */  Add windowing function  in siu
+                                                      get image size
+                        isu.c        /* TK: 0712  */  calculate the zooming factor
+                        jpeg.c       /* TK: 0712  */  extract the output size for captured image to siu and isu
+                        jpegapi.h    /* TK: 0712  */
+                        idu.c        /* TK: 0712  */  add the display function for captured image
+                        sys.c        /* TK: 0712  */  add zooming factor in captured mode
+                        uiact.c      /* TK: 0712  */  modify the zooming factor from [10 50] to [0 40]
+                        uiapi.h
+-------------------------------------------------------------------------------------------------------------------------                       							
+060718  1800    CY  	general.h 	/*CY 0718*/ 		Boot option.                      
+                        general.inc
+                        init.s   
+                        board.h      				GPIO register definition.
+                        gpio.c    				Key trigger.
+                        gpioapi.h
+                        os_cpu_c.c				Key polling
+                        ui.c					Key mapping.
+                        task.h      				User interface task priority.
+                        dcffs.c					Storage format and MBR handling.
+                        fat_ioctl.c				
+                        fat_misc.c
+                        fs_api.h
+                        ramdisk.c
+                        mmc.c
+                        sdc.c
+                        smc.c
+                        timer.c					Timer setup.
+-------------------------------------------------------------------------------------------------------------------------                                            				
+060728  1800    Peter  	asf.h	     /* BJ: 0718 S*/  Add the asf decoder function
+			            asf.c	     /* BJ: 0718 E*/
+			            dcf.c
+			            avi.c	     /* Peter: 0727 S*/  Add reset the capture control if error. 
+			            mp4.h	     /* Peter: 0727 S*/  Support MP4 file format playback.
+			            mp4.c	     /* Peter: 0727 E*/  Support MP4 file format playback.
+-------------------------------------------------------------------------------------------------------------------------
+060731  1400	Ychsu	board.h		/* yc: 2006.07.24 */	Add IIS resigers definition
+			iisreg.h				Modified some control value
+			iis.h					Modified iisInit(), iisTest(), iisSetRecFormat() & others
+			dma.c					Modified dmaConfig()
+-------------------------------------------------------------------------------------------------------------------------
+060821  1800	BJ	avi.c		/* BJ 0821 S*/		Add the HX8224 module.
+			idu.c					Please modify the compiler flag in general.h
+			general.h					
+			isu.c					
+-------------------------------------------------------------------------------------------------------------------------
+060828  1000	BJ	board.h		/* BJ 0828 S*/		Modify the clock setting (PA9001C)
+									general.h	/* BJ 0828 S*/		Please modify the compiler flag (PA9001C & PA9001A)
+									timer.h
+-------------------------------------------------------------------------------------------------------------------------
+060829  1200	Peter	jpeg.c		/*Peter 0829 S*/	Fix JPEG quantization table header and restart interval bug.
+                        exif.c      	/*Peter 0829 S*/        Fix JPEG quantization table header bug.
+-------------------------------------------------------------------------------------------------------------------------
+060907  2000	CY	smc.h		/*CY 0907*/		Neglect read/write completion interrupt status for read clear of
+                        smc.c      			        operation completion interrupt status.
+                        initstmem.s				*Adjust access time and write time of staic memory.
+			general.h				*Compile option - change sysopt.h and sysopt.inc accordingly.
+			sysopt.h
+			sysoptdef.h
+			sysopt.inc
+			sysoptdef.inc
+			initsysctrl.c				Add clock control.
+			timer.c
+			uart.c
+			dcffs.c					Flush write buffer of NAND gate flash when necessary.
+			apimisc.c
+			exif.c					Initialize thumbnail quantization in consistent with ui default setting.
+			dmaapi.h				Add distinction of SINGLE and BURST
+			dma.c
+			iis.c
+			i2c.c					Signal semaphore when timeout of missing interrupt.
+			uiapi.h					Modify option of video resolution from 176x144 to 320x240.
+			uimenu.h
+			isu.c					Support video resolution of 352x288 and 320x240 beside 640x480.
+			mpeg4.c
+			jpeg.c					Modify quantization setting.
+			sdc.c					Support high speed mode.
+			sys.c					Modify self-timer function.
+-------------------------------------------------------------------------------------------------------------------------
+060929  0850	BJ  sys.c           /*BJ 060929 S*/ To solution the idu can't reset problem.
+                                    /*BJ 060929 E*/ Isu fill one of buffer,at the same time the idu display this buffer.
+
+-------------------------------------------------------------------------------------------------------------------------
+061016 1020     Twokey    siu.c              Add the 48M/20M clock selection to the AE operarion
+                          idu.c              Add 48M/20M clock selection to CLKDIV
+-------------------------------------------------------------------------------------------------------------------------
+061020 1130     BJ	timer.c		/*BJ 061020 S*/		Add the PA9002A option 
+			sysoptdef.h	/*BJ 061020 E*/		Add the PA9002A option define.
+			submain.c				Add the PA9002A option to disable cache_init();
+			i2c.c					read clear : i2c interrupt status.
+-------------------------------------------------------------------------------------------------------------------------
+061023 1800     CY	scatter.txt	/*CY 1023*/		Enable cache before boot loader.
+			init.s
+			submain.c
+			initcache.s
+			initshadow.c				Add option of nand gate flash code boot from mask rom. 
+			dcfapi.h				Storage type runtime checking.
+			sysopt.h
+			commands.h
+			dcf.c					
+			dcffs.c
+			commands.c
+			shelltask.c
+			ispapi.h				Add isp function.
+			smcapi.h
+			sysapi.h
+			uiapi.h
+			uimenu.h
+			smcmap.c
+			sys.c
+			uiact.c
+			isp\*
+			task.h					Add usb function.
+			os_cfg.h
+			fs_conf.h
+			int_handler.c				
+			gpio.c
+			fat_misc.c
+			main.c
+			sdc.c
+			sdcfs.c
+			sdcusb.c
+			smc.c
+			smcfs.c
+			smcusb.c
+			usb\*
+-------------------------------------------------------------------------------------------------------------------------
+061026 1500 SW uimenu.h   /*SW 1026 S*/    Add phonts for LCM_HX8312 & LCM_HX8224
+-------------------------------------------------------------------------------------------------------------------------
+061026 1730     Lori	uiapi.h	 	/* Lori 2006/10/26 */	Add "Setting" in UI.
+			uimenu.h
+-------------------------------------------------------------------------------------------------------------------------
+061107 1500	Lori	ui.c		/* Lori 2006/11/07 */	Fix bug in UI.
+-------------------------------------------------------------------------------------------------------------------------
+061109 2200     Peter	avi.h	 	/*Peter 1109 S*/	Support Audio/Video sync.
+			avi.c                   Support Audio/Video sync.
+			dma.c                   Support polling interrupt.
+			dmaapi.h
+			idu.c                   Support manu mode for video capture.
+			iis.h                   Support Audio/Video sync.
+			iisreg.h                Support Audio/Video sync.
+			iis.c                   Support Audio/Video sync.
+			iisapi.h                Support Audio/Video sync.
+			isuapi.h                Support Audio/Video sync.
+			mpeg4api.h              Support Audio/Video sync.
+			task.h                  increase MPEG4_TASK_STACK_SIZE.
+			isu.c
+			asf.c
+			mp4.c
+			mpeg4.c
+			siu.c
+			int_handler.c           Enable IDU and IIS interrupt.
+			sys.c
+			sysopt.h
+-------------------------------------------------------------------------------------------------------------------------
+061113 1500     Peter	avi.c	 	/*Peter 1113 S*/	Improve data write to SD card performance.
+            mpeg4.c                 Let playback more smooth.
+            isu.c
+
+-------------------------------------------------------------------------------------------------------------------------
+061115 0905     YC	iis.c	 /* YC 1115 S*/	Fix IIS playback bug. Setting DMA cycle count to (siz/4).
+            		mpeg.c                  Setting DMA CH0 to "no burst mode".
+-------------------------------------------------------------------------------------------------------------------------
+061115 1426   Twokey    uiact.c
+                        uiapi.h	 	add manual WB and auto WB menu
+            		    ipuapi.h    add setColorCorrectionMtrix()
+            		    ipu.c       add default CCM and setColorCorrectionMtrix()
+            		    siu.h       add AWB struct parameters
+            		    siu.c       1. add AWB function
+            		                2. add set fix frame rate in video capture mode
+            		                3. fix the exposure time and gain mapping bug in capture mode and video capture mode 
+--------------------------------------------------------------------------------------------------------------------------
+061116 2100     Peter	avi.c	 	/*Peter 1116 S*/	Fix AVI capture, playback , capture change mode bug.
+-------------------------------------------------------------------------------------------------------------------------
+061123 1200     mh      mp4.h           modify MP4 related function
+                        mp4.c           modify MP4 related function 
+                        siu.c           add time stamp control for MP4
+                        mpeg4.c         add time stamp control for MP4              
+--------------------------------------------------------------------------------------------------------------------------
+061124 1000   Twokey   gpio.c       add gpio1 to monitor avi frame rate
+                       mpeg4.c      add gpio1.14 to monitor mpeg4 speed with software
+                                    add gpio1.16 to check mpeg4 hardware speed
+                       isu.c        add gpio1.13 to monitor isu speed
+                       siu.c        fix the bug for slow exposure time in video capture mode
+                                    add gpio1.12 to check the speed of siu
+                                    add gpio1.15 to monitor skip effect in video capture mode
+               CY                     
+                       sys.c        add grant for SDRAM arbitrary and change MPEG4 channels
+                       board.h      add SdcIntStat register     address:(SdcCtrlBase + 0x0038)
+                       fs_conf.h    modify the FS_FAT_FWRITE_UPDATE_DIR parameter to 0
+--------------------------------------------------------------------------------------------------------------------------
+061214 1035    Twokey   task.h      change priority
+                        sysopt.inc  add Romter/EEPROM device selection
+                        sysoptdef.inc
+                        
+                        isu.c       close GPIO1
+                        siu.c       close GPIO1
+                                    adjust stepsize for AE 
+---------------------------------------------------------------------------------------------------------------------------- 
+061214 1400    SW       sysoptdef.inc  define PLLOUT constant for PA9001C   
+                        sysoptdef.h    define DVP_256pin & EV3_388pin extended keypad constant
+                        gpio.c         DVP_256pin & EV3_388pin extended keypad assign 
+----------------------------------------------------------------------------------------------------------------------------                                   
+061219 1500    Peter       jpeg.c      Fix JPEG encoder quantization table bug.
+----------------------------------------------------------------------------------------------------------------------------
+070104 1400    Peter    asf.h       Support ASF file format capture/playback with IIS audio.
+                        asf.c       
+                        avi.c
+                        dma.c
+                        iis.h
+                        iis.c
+                        iisapi.h
+                        sysopt.h
+                        mpeg4.c
+                        siu.c
+                        sys.c
+                        exif.c
+----------------------------------------------------------------------------------------------------------------------------
+070104 1500    VCC      siu.c       Fix sensor mirror bug
+                        idu.c       Fix display mirror bug
+----------------------------------------------------------------------------------------------------------------------------
+070108 1600    Peter    mpeg4api.h  /* Peter 070108 S */ Support MPEG-4 720x480 resolution.
+                        uiapi.h     /* SW 0108 S */
+                        isu.c
+                        mpeg4.c
+                        uimenu.h
+                        uiact.c
+----------------------------------------------------------------------------------------------------------------------------
+070130 1120    Peter    sys.c       /* Peter 070130 */ Improve system performance.
+                        dma.c
+                        initsdram.s
+                        mpeg4.c
+----------------------------------------------------------------------------------------------------------------------------
+070213 2045   Lisa   siu_5m.c	/*Lisa 5M*/Add 5M sensor
+		siu_2M.c
+		sysopt.h
+		sysoptdef.h
+----------------------------------------------------------------------------------------------------------------------------
+070403 1500    Peter    asf.c       /* Peter 070403 */  
+                        int_handler.c                   Modify IRQ/FIQ handler to write zero clear.
+                        i2c.c                           Support PA9001D definition
+                        siuapi.h                        Fix MPEG-4 D1 resolution A/V sync bug.
+                        sysopt.h
+                        sysopt.inc
+                        sysoptdef.h
+                        sysoptdef.inc
+                        mpeg4.c
+                        siu_2M.c
+                        siu_5M.c
+                        timer.c
+----------------------------------------------------------------------------------------------------------------------------
+070907 1700    Lucian   ui.c

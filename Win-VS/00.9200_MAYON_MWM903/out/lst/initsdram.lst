@@ -1,0 +1,709 @@
+
+
+
+ARM Macro Assembler    Page 1 
+
+
+    1 00000000         ;
+    2 00000000         ;Copyright (c) 2008 Mars Semiconductor Corp.
+    3 00000000         ;
+    4 00000000         ;Module Name:
+    5 00000000         ;
+    6 00000000         ;       initsdram.s
+    7 00000000         ;
+    8 00000000         ;Abstract:
+    9 00000000         ;
+   10 00000000         ;       The SDRAM initialization routines.
+   11 00000000         ;
+   12 00000000         ;Environment:
+   13 00000000         ;
+   14 00000000         ;       ARM RealView Developer Suite
+   15 00000000         ;
+   16 00000000         ;Revision History:
+   17 00000000         ;       
+   18 00000000         ;       2006/07/17      David Tsai      Create  
+   19 00000000         ;
+   20 00000000         
+   21 00000000                 PRESERVE8
+   22 00000000         
+   23 00000000                 AREA             InitSDRAM, CODE, READONLY ; nam
+                                                            e this block of cod
+                                                            e
+   24 00000000         
+   25 00000000         ; --- SDRAM Control Register locations
+   26 00000000         
+   27 00000000 C0040000 
+                       SDRAM_TIME_PARAM0
+                               EQU              0xc0040000  ; Address of DDR-SD
+                                                            RAM Timing Paramete
+                                                            r 0 Register
+   28 00000000         
+   29 00000000 C0040004 
+                       SDRAM_TIME_PARAM1
+                               EQU              0xc0040004  ; Address of DDR-SD
+                                                            RAM Timing Paramete
+                                                            r 1 Register
+   30 00000000         
+   31 00000000 C0040008 
+                       SDRAM_CONFIG
+                               EQU              0xc0040008  ; Address of DDR-SD
+                                                            RAM Configuration R
+                                                            egister
+   32 00000000         
+   33 00000000 C004000C 
+                       SDRAM_EXT_BANK
+                               EQU              0xc004000c  ; Address of DDR-SD
+                                                            RAM External Bank B
+                                                            ase/Size Register
+   34 00000000         
+   35 00000000 C0040010 
+                       SDRAM_EXT_MODE
+                               EQU              0xc0040010  ; Address of DDR-SD
+                                                            RAM External Mode R
+                                                            egister
+   36 00000000         
+   37 00000000 C0040014 
+
+
+
+ARM Macro Assembler    Page 2 
+
+
+                       SDRAM_DFI_RW
+                               EQU              0xc0040014  ; Address of DDR-SD
+                                                            RAM DFI/ RW mode re
+                                                            gister
+   38 00000000         
+   39 00000000 C0040018 
+                       SDRAM_DFI_PHYA
+                               EQU              0xc0040018  ; Address of DDR-SD
+                                                            RAM DFI/ operation 
+                                                            mode A register
+   40 00000000         
+   41 00000000 C004001C 
+                       SDRAM_DFI_PHYB
+                               EQU              0xc004001c  ; Address of DDR-SD
+                                                            RAM DFI/ operation 
+                                                            mode B register
+   42 00000000         
+   43 00000000 C0040034 
+                       SDRAM_CHANELC
+                               EQU              0xc0040034  ; Address of DDR-SD
+                                                            RAM Chanel Counter 
+                                                            Register
+   44 00000000         
+   45 00000000 C0040038 
+                       SDRAM_DDLCTL
+                               EQU              0xc0040038  ; Address of DDR-SD
+                                                            RAM DLL Control Reg
+                                                            ister
+   46 00000000         
+   47 00000000         
+   48 00000000         ; --- SDRAM initialization
+   49 00000000         
+   50 00000000 80000002 
+                       SDRAM_DDLCTL_INIT
+                               EQU              0x80000002
+   51 00000000         
+   52 00000000 20000000 
+                       SDRAM_DFI_RW_INIT
+                               EQU              0x20000000
+   53 00000000         
+   54 00000000 00000000 
+                       SDRAM_CHANELC_INIT
+                               EQU              0x00000000
+   55 00000000         
+   56 00000000 18003228 
+                       SDRAM_EXT_BANK_INIT
+                               EQU              0x18003228  ; 32 Mb per bank (0
+                                                            101)
+   57 00000000         ; 32 bit external bus width (10)
+   58 00000000         ; 128 Mb size (10)
+   59 00000000         ; x32 column address (11)
+   60 00000000         ; 0x80000000 SDRAM base address (0x800)
+   61 00000000         ; Enable Bank (1)               
+   62 00000000         ; i.e.
+   63 00000000         ; 128 Mb = 32 Mb/bank * 4 bank = 2^25 Mb/bank * 4 bank =
+                       
+   64 00000000         ; 2^12 *  2^8 *   2^5 Mb/bank * 4 bank
+   65 00000000         ; rowAddr colAddr x32
+   66 00000000         
+
+
+
+ARM Macro Assembler    Page 3 
+
+
+   67 00000000 00000100 
+                       SDRAM_EXT_MODE_INIT
+                               EQU              0x00000100  ; DDR-SDRAM Externa
+                                                            l Mode Register ini
+                                                            tial value
+   68 00000000         
+   69 00000000 0410030A 
+                       SDRAM_TIME_PARAM0_INIT
+                               EQU              0x0410030a  ; tCL (10) - 2 cloc
+                                                            ks
+   70 00000000         ; tWR (00) - 0 + 1 clocks
+   71 00000000         ; tRC (0000) - 0 + 4 clocks
+   72 00000000         ; tRCD (000) - 0 + 2 clocks
+   73 00000000         ; tRP (000) - 0 + 2 clocks
+   74 00000000         ; tRAS (0001) - 1 clocks
+   75 00000000         
+   76 00000000 03130200 
+                       SDRAM_TIME_PARAM1_INIT
+                               EQU              0x03130200  ; tREF (0x0130) - o
+                                                            f no use at this ti
+                                                            me                 
+                                                                               
+                                                                        
+   77 00000000         ; auto refresh count (0011) - 3 times
+   78 00000000         ; precharge all count (0001) - 1 time
+   79 00000000         
+   80 00000000 00000200 
+                       SDRAM_CK_CKB
+                               EQU              0x00000200  ; CK and CKB (1)
+   81 00000000         
+   82 00000000 00000B00 
+                       SDRAM_CKE
+                               EQU              0x00000B00  ; CK and CKB (1)
+   83 00000000         ; CKE (1)
+   84 00000000         ; SDR SDRAM controller select (1)
+   85 00000000         
+   86 00000000         
+   87 00000000 00000B30 
+                       SDRAM_PRECHARGE_ALL0
+                               EQU              0x00000B30  ; precharge all cou
+                                                            nt of precharge all
+                                                             (1)
+   88 00000000         ; stagger type refresh (1)
+   89 00000000         ; CK and CKB (1)
+   90 00000000         ; CKE (1)
+   91 00000000         ; SDR SDRAM controller select (1)
+   92 00000000         
+   93 00000000 00003B38 
+                       SDRAM_AUTO_REFRESH
+                               EQU              0x00003B38  ; auto refresh of a
+                                                            uto refresh count (
+                                                            1)
+   94 00000000         ; precharge all count of precharge all (1)
+   95 00000000         ; stagger type refresh (1)
+   96 00000000         ; CK and CKB (1)
+   97 00000000         ; CKE (1)
+   98 00000000         ; SDR SDRAM controller select (1)                       
+                                                                               
+                                                               
+
+
+
+ARM Macro Assembler    Page 4 
+
+
+   99 00000000         
+  100 00000000 00001B04 
+                       SDRAM_MODE_REG_SET
+                               EQU              0x00001B04  ; mode register set
+                                                             - MRS (1)
+  101 00000000         ; CK and CKB (1)
+  102 00000000         ; CKE (1)
+  103 00000000         ; SDR SDRAM controller select (1)                       
+                                                                               
+                                                                               
+                       
+  104 00000000         
+  105 00000000 00000100 
+                       SDRAM_DELAY_200US
+                               EQU              0x00000100  ; loop count for 20
+                                                            0 us delay
+  106 00000000         
+  107 00000000 00000100 
+                       SDRAM_DELAY_200CLK
+                               EQU              0x00000100  ; loop count for 20
+                                                            0 clock delay
+  108 00000000         
+  109 00000000 00000004 
+                       SDRAM_MODE_REG_SET_ONGO
+                               EQU              0x00000004  ; ongoing of mode r
+                                                            egister set (1)
+  110 00000000         
+  111 00000000 00000008 
+                       SDRAM_AUTO_REFRESH_ONGO
+                               EQU              0x00000008  ; ongoing of auto p
+                                                            refetch count of au
+                                                            to prefetch (1)
+  112 00000000         
+  113 00000000 00000010 
+                       SDRAM_PRECHARGE_ALL_ONGO
+                               EQU              0x00000010  ; ongoing of precha
+                                                            rge all count of pr
+                                                            echarge all (1)    
+                                                                               
+                                                                               
+                                                                             
+  114 00000000         
+  115 00000000                 EXPORT           InitSdram
+  116 00000000         
+  117 00000000         InitSdram
+                               FUNCTION
+  118 00000000         
+  119 00000000         ;
+  120 00000000         ; Set DDR-SDRAM DLL Control Register 0xc0040038
+  121 00000000         ;
+  122 00000000 E59F10C8        LDR              r1, =SDRAM_DDLCTL
+  123 00000004 E3A0010A        LDR              r0, =SDRAM_DDLCTL_INIT
+  124 00000008 E5810000        STR              r0, [r1]
+  125 0000000C         
+  126 0000000C         ;
+  127 0000000C         ; Set DDR-SDRAM Chanel Counter Register 0xc0040034
+  128 0000000C         ;
+  129 0000000C E59F10C0        LDR              r1, =SDRAM_CHANELC
+  130 00000010 E3A00000        LDR              r0, =SDRAM_CHANELC_INIT
+
+
+
+ARM Macro Assembler    Page 5 
+
+
+  131 00000014 E5810000        STR              r0, [r1]
+  132 00000018         
+  133 00000018         ;
+  134 00000018         ; Set SDRAM External Bank Register 0xc004000c
+  135 00000018         ;
+  136 00000018 E59F10B8        LDR              r1, =SDRAM_EXT_BANK
+  137 0000001C E59F00B8        LDR              r0, =SDRAM_EXT_BANK_INIT
+  138 00000020 E5810000        STR              r0, [r1]
+  139 00000024         
+  140 00000024         ;
+  141 00000024         ; Set DDR-SDRAM DFI/ RW mode register 0xc0040014
+  142 00000024         ;
+  143 00000024 E59F10B4        LDR              r1, =SDRAM_DFI_RW
+  144 00000028 E3A00202        LDR              r0, =SDRAM_DFI_RW_INIT
+  145 0000002C E5810000        STR              r0, [r1]
+  146 00000030         
+  147 00000030         ;
+  148 00000030         ; Set DDR-SDRAM External Mode Register 0xc0040010
+  149 00000030         ;
+  150 00000030 E59F10AC        LDR              r1, =SDRAM_EXT_MODE
+  151 00000034 E3A00C01        LDR              r0, =SDRAM_EXT_MODE_INIT
+  152 00000038 E5810000        STR              r0, [r1]
+  153 0000003C         
+  154 0000003C         ;
+  155 0000003C         ; Set SDRAM Timing Parameter 0 Register 0xc0040000
+  156 0000003C         ;
+  157 0000003C E59F10A4        LDR              r1, =SDRAM_TIME_PARAM0
+  158 00000040 E59F00A4        LDR              r0, =SDRAM_TIME_PARAM0_INIT
+  159 00000044 E5810000        STR              r0, [r1]
+  160 00000048         
+  161 00000048         ;
+  162 00000048         ; Set SDRAM Timing Parameter 1 Register 0xc0040004
+  163 00000048         ;
+  164 00000048 E59F10A0        LDR              r1, =SDRAM_TIME_PARAM1
+  165 0000004C E59F00A0        LDR              r0, =SDRAM_TIME_PARAM1_INIT
+  166 00000050 E5810000        STR              r0, [r1]
+  167 00000054         
+  168 00000054         ;
+  169 00000054         ; CK and CKB    
+  170 00000054         ;
+  171 00000054 E59F109C        LDR              r1, =SDRAM_CONFIG ; 0xc0040008
+  172 00000058 E3A00C02        LDR              r0, =SDRAM_CK_CKB
+  173 0000005C E5810000        STR              r0, [r1]
+  174 00000060         
+  175 00000060         ;
+  176 00000060         ; CKE   
+  177 00000060         ;
+  178 00000060 E59F1090        LDR              r1, =SDRAM_CONFIG ; 0xc0040008
+  179 00000064 E3A00C0B        LDR              r0, =SDRAM_CKE
+  180 00000068 E5810000        STR              r0, [r1]
+  181 0000006C         
+  182 0000006C         ;
+  183 0000006C         ; 200 us Delay
+  184 0000006C         ;
+  185 0000006C E3A00C01        MOV              r0, #SDRAM_DELAY_200US
+  186 00000070         LABEL_SDRAM_DELAY_200US
+  187 00000070 E2500001        SUBS             r0, r0, #0x1
+  188 00000074 8AFFFFFD        BHI              LABEL_SDRAM_DELAY_200US
+  189 00000078         
+
+
+
+ARM Macro Assembler    Page 6 
+
+
+  190 00000078         ;
+  191 00000078         ; Precharge All 
+  192 00000078         ;
+  193 00000078 E59F1078        LDR              r1, =SDRAM_CONFIG ; 0xc0040008
+  194 0000007C E3A00EB3        LDR              r0, =SDRAM_PRECHARGE_ALL0
+  195 00000080 E5810000        STR              r0, [r1]
+  196 00000084         LABEL_SDRAM_PRECHARGE_ALL0
+  197 00000084 E5910000        LDR              r0, [r1, #0]
+  198 00000088 E3100010        TST              r0, #SDRAM_PRECHARGE_ALL_ONGO
+  199 0000008C 1AFFFFFC        BNE              LABEL_SDRAM_PRECHARGE_ALL0
+  200 00000090         
+  201 00000090         ;
+  202 00000090         ; Auto Refresh  
+  203 00000090         ;
+  204 00000090 E59F1060        LDR              r1, =SDRAM_CONFIG ; 0xc0040008
+  205 00000094 E59F0060        LDR              r0, =SDRAM_AUTO_REFRESH
+  206 00000098 E5810000        STR              r0, [r1]
+  207 0000009C         LABEL_SDRAM_AUTO_REFRESH
+  208 0000009C E5910000        LDR              r0, [r1, #0]
+  209 000000A0 E3100008        TST              r0, #SDRAM_AUTO_REFRESH_ONGO
+  210 000000A4 1AFFFFFC        BNE              LABEL_SDRAM_AUTO_REFRESH
+  211 000000A8         
+  212 000000A8         ;
+  213 000000A8         ; Mode Register Set     
+  214 000000A8         ;
+  215 000000A8 E59F1048        LDR              r1, =SDRAM_CONFIG ; 0xc0040008
+  216 000000AC E59F004C        LDR              r0, =SDRAM_MODE_REG_SET
+  217 000000B0 E5810000        STR              r0, [r1]
+  218 000000B4         LABEL_SDRAM_MODE_REG_SET
+  219 000000B4 E5910000        LDR              r0, [r1, #0]
+  220 000000B8 E3100004        TST              r0, #SDRAM_MODE_REG_SET_ONGO
+  221 000000BC 1AFFFFFC        BNE              LABEL_SDRAM_MODE_REG_SET
+  222 000000C0         
+  223 000000C0         ;
+  224 000000C0         ; 200 Clock Delay
+  225 000000C0         ;
+  226 000000C0 E3A00C01        MOV              r0, #SDRAM_DELAY_200CLK
+  227 000000C4         LABEL_SDRAM_DELAY_200CLK
+  228 000000C4 E2500001        SUBS             r0, r0, #0x1
+  229 000000C8 8AFFFFFD        BHI              LABEL_SDRAM_DELAY_200CLK
+  230 000000CC         
+  231 000000CC E12FFF1E        BX               LR
+  232 000000D0                 ENDFUNC
+  233 000000D0         
+  234 000000D0                 END                          ; mark the end of t
+                                                            his file
+              C0040038 
+              C0040034 
+              C004000C 
+              18003228 
+              C0040014 
+              C0040010 
+              C0040000 
+              0410030A 
+              C0040004 
+              03130200 
+              C0040008 
+              00003B38 
+              00001B04 
+
+
+
+ARM Macro Assembler    Page 7 
+
+
+Command Line: --debug --xref --diag_suppress=9931 --depend=.\out\obj\initsdram.
+d -o.\out\obj\initsdram.o -I.\inc -IC:\Keil_v5\ARM\RV31\INC -IC:\Keil_v5\ARM\CM
+SIS\Include --predefine="__UVISION_VERSION SETA 518" --predefine="USE_SCATTER_S
+YMS SETA 1" --list=.\out\lst\initsdram.lst board\src\initsdram.s
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+Relocatable symbols
+
+InitSDRAM 00000000
+
+Symbol: InitSDRAM
+   Definitions
+      At line 23 in file board\src\initsdram.s
+   Uses
+      None
+Comment: InitSDRAM unused
+InitSdram 00000000
+
+Symbol: InitSdram
+   Definitions
+      At line 117 in file board\src\initsdram.s
+   Uses
+      At line 115 in file board\src\initsdram.s
+Comment: InitSdram used once
+LABEL_SDRAM_AUTO_REFRESH 0000009C
+
+Symbol: LABEL_SDRAM_AUTO_REFRESH
+   Definitions
+      At line 207 in file board\src\initsdram.s
+   Uses
+      At line 210 in file board\src\initsdram.s
+Comment: LABEL_SDRAM_AUTO_REFRESH used once
+LABEL_SDRAM_DELAY_200CLK 000000C4
+
+Symbol: LABEL_SDRAM_DELAY_200CLK
+   Definitions
+      At line 227 in file board\src\initsdram.s
+   Uses
+      At line 229 in file board\src\initsdram.s
+Comment: LABEL_SDRAM_DELAY_200CLK used once
+LABEL_SDRAM_DELAY_200US 00000070
+
+Symbol: LABEL_SDRAM_DELAY_200US
+   Definitions
+      At line 186 in file board\src\initsdram.s
+   Uses
+      At line 188 in file board\src\initsdram.s
+Comment: LABEL_SDRAM_DELAY_200US used once
+LABEL_SDRAM_MODE_REG_SET 000000B4
+
+Symbol: LABEL_SDRAM_MODE_REG_SET
+   Definitions
+      At line 218 in file board\src\initsdram.s
+   Uses
+      At line 221 in file board\src\initsdram.s
+Comment: LABEL_SDRAM_MODE_REG_SET used once
+LABEL_SDRAM_PRECHARGE_ALL0 00000084
+
+Symbol: LABEL_SDRAM_PRECHARGE_ALL0
+   Definitions
+      At line 196 in file board\src\initsdram.s
+   Uses
+      At line 199 in file board\src\initsdram.s
+Comment: LABEL_SDRAM_PRECHARGE_ALL0 used once
+7 symbols
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+Absolute symbols
+
+SDRAM_AUTO_REFRESH 00003B38
+
+Symbol: SDRAM_AUTO_REFRESH
+   Definitions
+      At line 93 in file board\src\initsdram.s
+   Uses
+      At line 205 in file board\src\initsdram.s
+Comment: SDRAM_AUTO_REFRESH used once
+SDRAM_AUTO_REFRESH_ONGO 00000008
+
+Symbol: SDRAM_AUTO_REFRESH_ONGO
+   Definitions
+      At line 111 in file board\src\initsdram.s
+   Uses
+      At line 209 in file board\src\initsdram.s
+Comment: SDRAM_AUTO_REFRESH_ONGO used once
+SDRAM_CHANELC C0040034
+
+Symbol: SDRAM_CHANELC
+   Definitions
+      At line 43 in file board\src\initsdram.s
+   Uses
+      At line 129 in file board\src\initsdram.s
+Comment: SDRAM_CHANELC used once
+SDRAM_CHANELC_INIT 00000000
+
+Symbol: SDRAM_CHANELC_INIT
+   Definitions
+      At line 54 in file board\src\initsdram.s
+   Uses
+      At line 130 in file board\src\initsdram.s
+Comment: SDRAM_CHANELC_INIT used once
+SDRAM_CKE 00000B00
+
+Symbol: SDRAM_CKE
+   Definitions
+      At line 82 in file board\src\initsdram.s
+   Uses
+      At line 179 in file board\src\initsdram.s
+Comment: SDRAM_CKE used once
+SDRAM_CK_CKB 00000200
+
+Symbol: SDRAM_CK_CKB
+   Definitions
+      At line 80 in file board\src\initsdram.s
+   Uses
+      At line 172 in file board\src\initsdram.s
+Comment: SDRAM_CK_CKB used once
+SDRAM_CONFIG C0040008
+
+Symbol: SDRAM_CONFIG
+   Definitions
+      At line 31 in file board\src\initsdram.s
+   Uses
+      At line 171 in file board\src\initsdram.s
+      At line 178 in file board\src\initsdram.s
+      At line 193 in file board\src\initsdram.s
+      At line 204 in file board\src\initsdram.s
+      At line 215 in file board\src\initsdram.s
+
+
+
+ARM Macro Assembler    Page 2 Alphabetic symbol ordering
+Absolute symbols
+
+
+SDRAM_DDLCTL C0040038
+
+Symbol: SDRAM_DDLCTL
+   Definitions
+      At line 45 in file board\src\initsdram.s
+   Uses
+      At line 122 in file board\src\initsdram.s
+Comment: SDRAM_DDLCTL used once
+SDRAM_DDLCTL_INIT 80000002
+
+Symbol: SDRAM_DDLCTL_INIT
+   Definitions
+      At line 50 in file board\src\initsdram.s
+   Uses
+      At line 123 in file board\src\initsdram.s
+Comment: SDRAM_DDLCTL_INIT used once
+SDRAM_DELAY_200CLK 00000100
+
+Symbol: SDRAM_DELAY_200CLK
+   Definitions
+      At line 107 in file board\src\initsdram.s
+   Uses
+      At line 226 in file board\src\initsdram.s
+Comment: SDRAM_DELAY_200CLK used once
+SDRAM_DELAY_200US 00000100
+
+Symbol: SDRAM_DELAY_200US
+   Definitions
+      At line 105 in file board\src\initsdram.s
+   Uses
+      At line 185 in file board\src\initsdram.s
+Comment: SDRAM_DELAY_200US used once
+SDRAM_DFI_PHYA C0040018
+
+Symbol: SDRAM_DFI_PHYA
+   Definitions
+      At line 39 in file board\src\initsdram.s
+   Uses
+      None
+Comment: SDRAM_DFI_PHYA unused
+SDRAM_DFI_PHYB C004001C
+
+Symbol: SDRAM_DFI_PHYB
+   Definitions
+      At line 41 in file board\src\initsdram.s
+   Uses
+      None
+Comment: SDRAM_DFI_PHYB unused
+SDRAM_DFI_RW C0040014
+
+Symbol: SDRAM_DFI_RW
+   Definitions
+      At line 37 in file board\src\initsdram.s
+   Uses
+      At line 143 in file board\src\initsdram.s
+Comment: SDRAM_DFI_RW used once
+SDRAM_DFI_RW_INIT 20000000
+
+
+
+
+ARM Macro Assembler    Page 3 Alphabetic symbol ordering
+Absolute symbols
+
+Symbol: SDRAM_DFI_RW_INIT
+   Definitions
+      At line 52 in file board\src\initsdram.s
+   Uses
+      At line 144 in file board\src\initsdram.s
+Comment: SDRAM_DFI_RW_INIT used once
+SDRAM_EXT_BANK C004000C
+
+Symbol: SDRAM_EXT_BANK
+   Definitions
+      At line 33 in file board\src\initsdram.s
+   Uses
+      At line 136 in file board\src\initsdram.s
+Comment: SDRAM_EXT_BANK used once
+SDRAM_EXT_BANK_INIT 18003228
+
+Symbol: SDRAM_EXT_BANK_INIT
+   Definitions
+      At line 56 in file board\src\initsdram.s
+   Uses
+      At line 137 in file board\src\initsdram.s
+Comment: SDRAM_EXT_BANK_INIT used once
+SDRAM_EXT_MODE C0040010
+
+Symbol: SDRAM_EXT_MODE
+   Definitions
+      At line 35 in file board\src\initsdram.s
+   Uses
+      At line 150 in file board\src\initsdram.s
+Comment: SDRAM_EXT_MODE used once
+SDRAM_EXT_MODE_INIT 00000100
+
+Symbol: SDRAM_EXT_MODE_INIT
+   Definitions
+      At line 67 in file board\src\initsdram.s
+   Uses
+      At line 151 in file board\src\initsdram.s
+Comment: SDRAM_EXT_MODE_INIT used once
+SDRAM_MODE_REG_SET 00001B04
+
+Symbol: SDRAM_MODE_REG_SET
+   Definitions
+      At line 100 in file board\src\initsdram.s
+   Uses
+      At line 216 in file board\src\initsdram.s
+Comment: SDRAM_MODE_REG_SET used once
+SDRAM_MODE_REG_SET_ONGO 00000004
+
+Symbol: SDRAM_MODE_REG_SET_ONGO
+   Definitions
+      At line 109 in file board\src\initsdram.s
+   Uses
+      At line 220 in file board\src\initsdram.s
+Comment: SDRAM_MODE_REG_SET_ONGO used once
+SDRAM_PRECHARGE_ALL0 00000B30
+
+Symbol: SDRAM_PRECHARGE_ALL0
+   Definitions
+      At line 87 in file board\src\initsdram.s
+
+
+
+ARM Macro Assembler    Page 4 Alphabetic symbol ordering
+Absolute symbols
+
+   Uses
+      At line 194 in file board\src\initsdram.s
+Comment: SDRAM_PRECHARGE_ALL0 used once
+SDRAM_PRECHARGE_ALL_ONGO 00000010
+
+Symbol: SDRAM_PRECHARGE_ALL_ONGO
+   Definitions
+      At line 113 in file board\src\initsdram.s
+   Uses
+      At line 198 in file board\src\initsdram.s
+Comment: SDRAM_PRECHARGE_ALL_ONGO used once
+SDRAM_TIME_PARAM0 C0040000
+
+Symbol: SDRAM_TIME_PARAM0
+   Definitions
+      At line 27 in file board\src\initsdram.s
+   Uses
+      At line 157 in file board\src\initsdram.s
+Comment: SDRAM_TIME_PARAM0 used once
+SDRAM_TIME_PARAM0_INIT 0410030A
+
+Symbol: SDRAM_TIME_PARAM0_INIT
+   Definitions
+      At line 69 in file board\src\initsdram.s
+   Uses
+      At line 158 in file board\src\initsdram.s
+Comment: SDRAM_TIME_PARAM0_INIT used once
+SDRAM_TIME_PARAM1 C0040004
+
+Symbol: SDRAM_TIME_PARAM1
+   Definitions
+      At line 29 in file board\src\initsdram.s
+   Uses
+      At line 164 in file board\src\initsdram.s
+Comment: SDRAM_TIME_PARAM1 used once
+SDRAM_TIME_PARAM1_INIT 03130200
+
+Symbol: SDRAM_TIME_PARAM1_INIT
+   Definitions
+      At line 76 in file board\src\initsdram.s
+   Uses
+      At line 165 in file board\src\initsdram.s
+Comment: SDRAM_TIME_PARAM1_INIT used once
+27 symbols
+368 symbols in table

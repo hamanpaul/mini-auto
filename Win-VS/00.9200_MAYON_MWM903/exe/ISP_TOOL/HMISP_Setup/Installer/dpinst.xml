@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<dpInst>
+     <legacyMode/>
+     <forceIfDriverIsNotBetter/>
+     <enableNotListedLanguages/>
+     <language code="0x0409">
+        <dpinstTitle>Generic Installer</dpinstTitle>  
+        <welcomeTitle>Welcome to the Generic Installer!</welcomeTitle>
+        <welcomeIntro>This wizard will walk you through installing the software.</welcomeIntro>
+        <installHeaderTitle>Installing the software...</installHeaderTitle>
+        <finishTitle>Congratulations!</finishTitle>
+        <finishText>Enjoy.</finishText>
+     </language>
+</dpInst>
+

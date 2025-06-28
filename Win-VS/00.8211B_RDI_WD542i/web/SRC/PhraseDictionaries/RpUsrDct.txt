@@ -1,0 +1,132 @@
+/*
+/*	File:		RpUsrDct.txt
+/*
+/*	Contains:	Contains the definitions for the default user phrase dictionary
+/*
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+/*
+/*	Copyright:	© 1995-2003 by Allegro Software Development Corporation
+/*  All rights reserved.
+/*
+/*  This module contains confidential, unpublished, proprietary
+/*  source code of Allegro Software Development Corporation.
+/*
+/*  The copyright notice above does not evidence any actual or intended
+/*  publication of such source code.
+/*
+/*  License is granted for specific uses only under separate
+/*  written license by Allegro Software Development Corporation.
+/*
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+/*
+/*	Change History (most recent first):
+/*
+/* * * * Release 4.20  * * *
+/*		01/06/03	rhb		fix message for C_S_Error7
+/* * * * Release 4.12  * * *
+/* * * * Release 4.07  * * *
+/*		03/22/02	rhb		add C_S_Error22
+/* * * * Release 4.06  * * *
+/* * * * Release 4.00  * * *
+/*		02/20/01	bva		add C_S_IPAddress
+/* * * * Release 3.0 * * * *
+/*		12/11/98	rhb		add Soft Page Errors
+/* * * * Release 2.2 * * * *
+/*		11/26/98	bva		updated logo
+/* * * * Release 2.1 * * * *
+/*		02/16/98	bva		fixed C_S_Error7 quotes
+/* * * * Release 2.0 * * * *
+/*		11/05/97	rhb		updated to match current RpUsrDct.c/RpUsrDct.h
+/*		03/03/97	bva		created from RpData and RpPages
+/*
+/*	To Do:
+/* */
+
+
+/* *********************************** */
+/*         User Phrase Dictionary      */
+/* *********************************** */
+
+/* The first 64 phrases are used by the RomPager Error Pages */
+
+C_S_ObjectNotFound	= "Object Not Found"
+C_S_ProtectedObject	= "Protected Object"
+C_S_ServerBusy		= "Server Busy"
+C_S_RequestedUrl	= "The requested URL '"
+C_S_WasNotFound		= "' was not found on the "
+C_S_ReturnTo		= "Return to "
+C_S_LastPage		= "last page"
+C_S_ThisObjectOnThe	= "This object on the "
+C_S_IsProtected		= " is protected"
+C_S_Busy1			= "The object you requested on the "
+C_S_Busy2			= " is being used by someone else.  Please try again later"
+C_S_Error1			= "The item was not found"
+C_S_Error2			= "This single" C_S_NotRecognized
+C_S_Error3			= "This multiple" C_S_NotRecognized
+C_S_Error4			= "Illegal hexadecimal character was detected"
+C_S_Error5			= "An odd number of hexadecimal characters were detected"
+C_S_Error6			= "A colon was expected following a number"
+C_S_Error7			= "Extra characters were detected in the item"
+C_S_Error8			= C_S_TheNumberToo C_S_small C_S_ForSigned "8" C_S_BitInteger
+C_S_Error9			= C_S_TheNumberToo C_S_large C_S_ForSigned "8" C_S_BitInteger
+C_S_Error10			= C_S_TheNumberToo C_S_small C_S_ForSigned "16" C_S_BitInteger
+C_S_Error11			= C_S_TheNumberToo C_S_large C_S_ForSigned "16" C_S_BitInteger
+C_S_Error12			= C_S_TheNumberToo C_S_small C_S_ForSigned "32" C_S_BitInteger
+C_S_Error13			= C_S_TheNumberToo C_S_large C_S_ForSigned "32" C_S_BitInteger
+C_S_Error14			= C_S_TheNumberToo C_S_small C_S_ForSigned "64" C_S_BitInteger
+C_S_Error15			= C_S_TheNumberToo C_S_large C_S_ForSigned "64" C_S_BitInteger
+C_S_Error16			= C_S_TheNumberToo C_S_large C_S_ForUnsigned "8" C_S_BitInteger
+C_S_Error17			= C_S_TheNumberToo C_S_large C_S_ForUnsigned "16" C_S_BitInteger
+C_S_Error18			= C_S_TheNumberToo C_S_large C_S_ForUnsigned "32" C_S_BitInteger
+C_S_Error19			= C_S_TheNumberToo C_S_large C_S_ForUnsigned "64" C_S_BitInteger
+C_S_Error20			= "A decimal digit" C_S_WasExpected
+C_S_Error21			= "An integer" C_S_WasExpected
+C_S_Error22			= "An Extended ACSII character was detected"
+
+/*	The next 8 items  are used to save memory in some of the phrases above.	*/
+/*	They are not used directly in any of the engine error messages, and do 	*/
+/*	not need to be translated if the messages above are translated fully.	*/
+C_S_TheNumberToo	= "The number was too "
+C_S_small			= "small "
+C_S_large			= "large "
+C_S_ForSigned		= "for a signed "
+C_S_ForUnsigned		= "for an unsigned "
+C_S_BitInteger		= " bit integer"
+C_S_NotRecognized	= " selection option was not recognized"
+C_S_WasExpected		= " was expected"
+
+C_S_EntryError		= "Entry Error"
+C_S_ErrorDetected	= "An Error Was Detected On The Previous Page"
+C_S_HtmlItem		= "HTML Item "
+C_S_Name			= "name: "
+C_S_Value			= "value: "
+C_S_Enabled			= "Enabled"
+C_S_Disabled		= "Disabled"
+C_S_ServerError		= "Server Error"
+C_S_FSErrorDetected	= "A file system error was detected on the "
+C_S_UnexpectedMp	= "Unexpected multipart form data"
+C_S_GeneralError	= ": general error"
+C_S_DupFilename		= ": duplicate filename"
+C_S_DiskFull		= ": disk full"
+C_S_InvalidTag		= "SoftPage Error: Invalid tag."
+C_S_TooFewResources	= "SoftPage Error: Insufficient device resources for request."
+C_S_NoSuchName		= "SoftPage Error: No device item matches Name value, "
+C_S_TypeMismatch	= "SoftPage Error: Request type doesn't match device item type -- "
+C_S_Reserved1		= ""
+C_S_Reserved2		= ""
+C_S_Reserved3		= ""
+C_S_Reserved4		= ""
+C_S_Reserved5		= ""
+C_S_Reserved6		= ""
+
+/*	The following dictionary entries are used in the sample pages, but not 	*/
+/*	elsewhere in the engine.  Feel free to replace these for your device.	*/
+C_S_RomPager		= "RomPager"
+C_S_Allegro			= "Allegro"
+C_S_AllegroLogo		= C_oHR C_oP C_oCENTER C_oIMG_SRC "/Images/Main\"" C_WIDTH "160" C_HEIGHT "80>" C_xCENTER
+C_S_NBSP4			= C_NBSP C_NBSP C_NBSP C_NBSP
+C_S_NBSP8			= C_S_NBSP4 C_S_NBSP4
+C_S_NBSP12			= C_S_NBSP8 C_S_NBSP4 "\n"
+C_S_ConnectionParm	= "stcpConnection theConnection"
+C_S_StcpCallStart	= "extern RpErrorCode Stcp"
+C_S_IPAddress		= "IP address"

@@ -1,0 +1,44 @@
+;;; Copyright ARM Ltd 2002. All rights reserved.
+
+;; Embedded scatter file
+;; Stack and Heap are located in the D-TCM
+
+;CY 1023
+;Lucian 07/04/12
+ROM_LOAD 0x80000000
+{
+	ROM_CODE 0x80000000 0x00080000	; Code in ROM
+	{
+	    vectors.o (Vect, +FIRST)
+		init.o           	        ; Initialization code
+		initSYSCTRL.o			    ; Initialise SYSTEM CONTROL
+		initSTMEM.o		 	        ; Initialise STATIC MEMORY
+		initSDRAM.o			        ; Initialise SDRAM
+		initMMU.o                   ; Create Translation Table
+		initCACHE.o			        ; Initialise CACHE
+		* (InRoot$$Sections)        ; All library sections that must be in a root region
+						            ; e.g. __main.o, __scatter*.o, * (Region$$Table)
+		* (+RO)				        ; any remaining code inc C lib.
+	}
+    	
+	RAM_DATA 0x80080000			; Data in RAM		
+	{
+		* (+RW,+ZI)
+	}
+
+	RAM_HEAP +0 EMPTY 0x3000		; Heap in RAM
+	{
+
+	}
+    
+	RAM_STACK 0x80200000 EMPTY -0x3000	; Stack in RAM
+	{
+
+	}
+
+	RAM_TTB 0x81000000 UNINIT		; Translation table in RAM
+	{
+		TTB.o (+ZI)
+	}    
+}
+

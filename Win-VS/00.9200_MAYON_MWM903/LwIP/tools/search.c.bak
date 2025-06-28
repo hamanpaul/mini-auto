@@ -1,0 +1,136 @@
+//*----------------------------------------------------------------------------
+//* ゅン			   : search.c
+//* 磞瓃		   : 矗ㄑ疭ず琩тㄧ计
+//*     		   : 纒
+//* セ			   : 1.0
+//* ミら戳丁	   : 2004/07/17 09:48
+//* 程эら戳丁 : 
+//* э		   : 
+//*----------------------------------------------------------------------------
+
+//*------------------------------ include file --------------------------------
+#include <string.h>
+#include	"ucos_ii.h"
+#include	"search.h"
+//*--------------------- Constants & Variable definition ----------------------
+//*----------------------------------------------------------------------------
+//* ㄧ计嘿 : MemSearch
+//* 磞瓃 : ﹚ず跋办琩т计沮赣ㄧ计琩тヴ種摸计沮
+//* 把计 :       <pvMem>[in] ﹚ず跋办皐
+//*			 :  <u32MemSize>[in] 砆浪ず跋办
+//*			 :     <u32Data>[in] 砆浪计沮
+//*			 : <u32DataSize>[in] 砆浪计沮BYTE
+//* 把计 : т玥竚皐玥NULL
+//*----------------------------------------------------------------------------
+void *MemSearch(void *pvMem, INT32U u32MemSize, INT32U u32Data, INT32U u32DataSize)
+{
+	const INT8U		*__pubAddr = pvMem;	
+	INT8S 			*__pbData = (INT8S *)&u32Data;
+	INT32S 			i;
+	BOOLEAN			__blIsMatch;
+	
+	do{
+		__pubAddr = (INT8U*)MemChr((INT8S*)__pubAddr, *__pbData, ((INT8U *)pvMem + u32MemSize) - __pubAddr);
+		if(__pubAddr != NULL)
+		{
+			__blIsMatch = TRUE;
+			for(i=1; i<u32DataSize; i++)
+			{
+				if(*(__pubAddr + i) != *(__pbData + i))
+				{
+					__blIsMatch = OS_FALSE;
+					break;
+				}
+			}
+		
+			if(__blIsMatch)
+				return (void *)__pubAddr;
+		
+			__pubAddr++;	
+		}
+		else
+			break;		
+	}while(TRUE);
+	
+	return NULL;
+}
+
+//*----------------------------------------------------------------------------
+//* ㄧ计嘿 : MemChr
+//* 磞瓃 : ﹚ず跋办琩т才
+//* 把计 :      <pbMem>[in] ﹚ず跋办皐
+//*			 :      <bBYTE>[in] 砆浪才
+//*			 : <u32MemSize>[in] ず
+//* 把计 : т龟悔竚
+//*----------------------------------------------------------------------------
+INT8S *MemChr(INT8S *pbMem, INT8S bBYTE, INT32U u32MemSize)
+{
+	INT8S		*__pbNext = pbMem;
+	INT32S		i;
+
+	for(i=0; i<u32MemSize; i++)
+	{
+		if(*(__pbNext+i) == bBYTE)
+			return (__pbNext + i);
+	}
+	
+	return NULL;
+}
+
+//*----------------------------------------------------------------------------
+//* ㄧ计嘿 : memstr
+//* 磞瓃 : ﹚ず跋办琩т才﹃
+//* 把计 :     <pbMem>[in] ﹚ず跋办皐
+//*			 :     <pbStr>[in] 砆浪才﹃
+//*			 : <ulStrSize>[in] 砆浪才﹃
+//*			 : <ulMemSize>[in] ず
+//* 把计 : т玥TRUE玥FALSE
+//*----------------------------------------------------------------------------
+BOOLEAN memstr(INT8S *pbMem, INT8S *pbStr, INT32U u32StrSize, INT32U u32MemSize)
+{
+	INT8S *__pbNext = pbMem;
+	
+	__pbNext = MemChr(__pbNext, (INT8S)pbStr[0], u32MemSize);
+	while(__pbNext != NULL)
+	{
+		if(__pbNext != NULL)
+		{
+			if(strncmp(__pbNext, pbStr, u32StrSize) == 0)
+				return TRUE;
+			
+			__pbNext += 1;
+			__pbNext = MemChr(__pbNext, (INT8S)pbStr[0], (pbMem + u32MemSize) - __pbNext);
+		}
+	}
+		
+	return FALSE;
+}
+
+//*----------------------------------------------------------------------------
+//* ㄧ计嘿 : memstrExt
+//* 磞瓃 : ﹚ず跋办琩т才﹃
+//* 把计 :     <pbMem>[in] ﹚ず跋办皐
+//*			 :     <pbStr>[in] 砆浪才﹃
+//*			 : <ulStrSize>[in] 砆浪才﹃
+//*			 : <ulMemSize>[in] ず
+//* 把计 : т才﹃┮竚皐玥NULL
+//*----------------------------------------------------------------------------
+INT8S *memstrExt(INT8S *pbMem, INT8S *pbStr, INT32U u32StrSize, INT32U u32MemSize)
+{
+	INT8S *__pbNext = pbMem;
+	
+	__pbNext = MemChr(__pbNext, (INT8S)pbStr[0], u32MemSize);
+	while(__pbNext != NULL)
+	{
+		if(__pbNext != NULL)
+		{
+			if(strncmp(__pbNext, pbStr, u32StrSize) == 0)
+				return __pbNext;
+			
+			__pbNext += 1;
+			__pbNext = MemChr(__pbNext, (INT8S)pbStr[0], (pbMem + u32MemSize) - __pbNext);
+		}
+	}
+		
+	return NULL;
+}

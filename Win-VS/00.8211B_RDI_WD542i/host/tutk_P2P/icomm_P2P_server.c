@@ -1,0 +1,4985 @@
+#include "general.h"
+#include "board.h"
+#if (TUTK_SUPPORT==1)
+#include "TUTKIOTCAPI.h"
+#include "TUTKAVAPI.h"
+#include "../Lwip/include/tutk_P2P/AVFRAMEINFO.h"
+#include "../Lwip/include/tutk_P2P/AVIOCTRLDEFs.h"
+#include "gpiapi.h"
+#include "lwipapi.h"
+#include "Task.h"
+#include "MPEG4api.h"
+//#include "IISapi.h"
+#include "UIapi.h"
+#include "rfiuapi.h"
+#include "uiKey.h"
+#include "sysapi.h"
+#include "fsapi.h"
+#include "GlobalVariable.h"
+#include <../rfiu/inc/rfiu.h>
+#include "dcfapi.h"
+#include "timerapi.h"
+#include <lwip/sockets.h>
+#include "rtcapi.h"
+#include "p2pserver_api.h"
+//#include "ispapi.h"
+#include "../../ui/inc/ui.h"
+#include "../../ui/inc/ui_project.h"
+//#include "encrptyapi.h"
+#if HOME_RF_SUPPORT
+#include "MR8200def_homeautomation.h"
+#endif
+/*
+ *********************************************************************************************************
+ *  SYS Constant
+ *********************************************************************************************************
+ */
+
+#define MAX_SIZE_IOCTRL_BUF		1024
+#define MAX_BUF_SIZE 5120
+	
+#define Local_record   0 
+#define Local_playback 1
+#define RX_receive     2
+#define RX_transcoder  3
+
+#define MAX_CLIENT 4
+#define MAX_AV_CH 1 // Sean 20170426 TX only got one CH.
+#define BUFF_FOR_AUDIO  1024
+
+#if APP_KEEP_ALIVE
+#define KEEP_ALIVE_TIMEOUT	60
+#endif
+
+typedef struct {
+  u32_t i[2];                   /* number of _bits_ handled mod 2^64 */
+  u32_t buf[4];                                    /* scratch buffer */
+  unsigned char in[64];                              /* input buffer */
+  unsigned char digest[16];     /* actual digest after MD5Final call */
+} MD5_CTX;
+
+//Multi-user related
+typedef struct _AV_Client
+{
+	int avIndex[MAX_AV_CH];
+    int avChannel;
+	int speakerAvIndex;
+	unsigned char bEnableVideo;
+	unsigned char bEnableAudio;
+	unsigned char bShowInfo;
+	unsigned char bP2PConnected;
+	unsigned char VOLSend;   
+	unsigned char bEnableSpeaker;
+	unsigned char speakerCh;
+	unsigned char bPausePlayBack;
+	unsigned char bStopPlayBack;
+	unsigned char playBackCh;
+	unsigned char getsupportstream;
+}AV_Client;
+
+ typedef struct _AudioIn
+{
+	int SID;
+	int ch;
+	int avIndex;
+	unsigned long srvType;
+	int dspFd;
+}AudioIn;
+
+
+/*
+ *********************************************************************************************************
+ * Variables
+ *********************************************************************************************************
+ */
+
+unsigned char MPEG4_config[0x1d] =    
+{
+    0x00, 0x00, 0x01, 0xB0,
+    0x03, 0x00, 0x00, 0x01,
+    0xB5, 0x09, 
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x01, 0x20,
+    0x00, 0xc4, 0x88, 0xba,
+    0x98, 0x50, 0x00, 0x40,
+    0x01, 0x44, 0x3f
+};
+unsigned char LinkAV_config[0x06] =    
+{
+    0x00, 0x00, 0x01, 0xB8,
+    0x08, 0x00 
+};
+
+#if (UI_VERSION == UI_VERSION_TRANWO)
+static unsigned char MPEG4_NoCam_Japan_QVGA[] =    
+{};
+
+static unsigned char MPEG4_OutOfRange_Japan_QVGA[] =    
+{};
+#elif((UI_VERSION == UI_VERSION_RDI) || (UI_VERSION == UI_VERSION_RDI_2) || (UI_VERSION == UI_VERSION_RDI_3))
+	#if((HW_BOARD_OPTION ==  MR8200_RX_RDI_M742) && (PROJ_OPT == 4))
+	static unsigned char MPEG4_NoCam_Japan_QVGA[] =    
+	{};
+
+	static unsigned char MPEG4_OutOfRange_Japan_QVGA[] =    
+	{};
+	#endif
+#endif
+
+static unsigned char MPEG4_NoCam_QVGA[] =    
+{};
+
+static unsigned char MPEG4_OutOfRange_QVGA[] =    
+{};
+
+#if (UI_VERSION == UI_VERSION_TRANWO)
+// TRANWO "Sorry, this event is currently being played on another device."
+unsigned char MPEG4_Playback_black_QVGA[] =    
+{};
+unsigned char MPEG4_Playback_black_Spanish_QVGA[] =    
+{};
+unsigned char MPEG4_Playback_black_Japan_QVGA[] =
+{};
+#else
+//Another one is using. 2499
+unsigned char MPEG4_Playback_black_QVGA[] =    
+{};
+	#if((UI_VERSION == UI_VERSION_RDI) || (UI_VERSION == UI_VERSION_RDI_2) || (UI_VERSION == UI_VERSION_RDI_3))
+		#if((HW_BOARD_OPTION ==  MR8200_RX_RDI_M742) && (PROJ_OPT == 4))
+			unsigned char MPEG4_Playback_black_Japen_QVGA[] =
+			{};
+		#else
+			unsigned char MPEG4_Playback_black_Japen_QVGA[] =
+			{};
+		#endif
+		unsigned char MPEG4_Playback_black_Spanish_QVGA[] =    
+		{};
+		unsigned char MPEG4_Playback_black_French_QVGA[] =    
+		{};
+		unsigned char MPEG4_Playback_black_German_QVGA[] =    
+		{};
+		unsigned char MPEG4_Playback_black_Italian_QVGA[] =    
+		{};
+	#endif
+#endif
+u8 gAuAdjust =20;
+u8 gAuCnt =7;
+u8 gLogOn=0;
+u8 Sean_Frame_data_size=0;
+u32 SERVTYPE_STREAM_SERVER;
+int CurrentCH;
+int	SpeakerAvIndex;
+int fileplayback=0;
+int gbSearchEvent=0;
+SMsgAVIoctrlPlayRecord gRemote_playfile;
+struct search_time search_dir_start,search_dir_end;
+s8 P2PEnableplaybackStreaming;
+u8 Fileplaying=0;   /*for RDI 2: local playback*/
+u8 Remote_play=0;
+//Multi-CH related
+s8  P2PEnableStreaming[MAX_AV_CH];
+u32 P2PVideoBufReadIdx[MAX_AV_CH];
+u32 P2PVideoPresentTime[MAX_AV_CH];
+u32 P2PAudioBufReadIdx[MAX_AV_CH];
+u32 P2PAudioPresentTime[MAX_AV_CH];
+u32 P2PChannelStart[MAX_AV_CH];
+VIDEO_BUF_MNG *P2PVideoBuf[MAX_AV_CH];
+IIS_BUF_MNG   *P2PAudioBuf[MAX_AV_CH];
+
+OS_EVENT* P2PAudioCmpSemEvt[MAX_AV_CH];
+OS_EVENT* P2PVideoCmpSemEvt[MAX_AV_CH];
+OS_EVENT* P2PAudioPlaybackCmpSemEvt;
+OS_EVENT* P2PVideoPlaybackCmpSemEvt;
+
+INT8U Sean_test=0;
+static AV_Client gClientInfo[MAX_CLIENT];
+int P2PAVsource[MAX_CLIENT]; 
+int P2PAV_CH[MAX_CLIENT];
+
+//P2P server related
+int gOnlineNum = 0;
+int gFirstConnect=0;
+int videoquality=2;
+u8 * gUID;
+int gFlagLoginOK = 0;
+int gLoginFaileCnt = 1;
+int gFlagSpeakerOK = 0;
+int gSpeakerFailedCnt = 0;
+int gSpeakerSID = -1;
+int gPlaybackSID=0;
+int gPlaybackWidth=0;
+int gPlaybackHeight=0;
+char gP2PPassword[UI_P2P_PSW_MAX_LEN]="000000";
+#if UI_LIGHT_SUPPORT
+u8 AppLightStatus=0;
+#endif
+
+#if APP_KEEP_ALIVE
+int gFlagKeepAlive[MAX_CLIENT] = {0,0,0,0}; /* 0:Default not connected; 1:APP connected*/
+RTC_DATE_TIME gKeepAliveTime0;
+RTC_DATE_TIME gKeepAliveTime1;
+RTC_DATE_TIME gKeepAliveTime2;
+RTC_DATE_TIME gKeepAliveTime3;
+#endif
+
+struct sockaddr_in gPushMsgSrvAddr;
+char APNserver[30]="119.81.84.106";//"p2pserver1.mars-semi.com.tw ,Master server :Soft layer
+char APNserver2[30]="125.65.83.75";// Slave server.
+int gPushDuration=1;
+struct sockaddr_in gFWSrvAddr;
+//RTC_DATE_TIME gPushMsgTime;
+unsigned int gPushMsgTime;
+
+INT32U	gSessionTaskStack[TASK_SESSION_STACK_SIZE];
+INT32U	gLoginTaskStack[TASK_LOGIN_STACK_SIZE];
+INT32U	gListenTaskStack[TASK_LISTEN_STACK_SIZE];
+INT32U	gSpeakerTaskStack[TASK_SPEAKER_STACK_SIZE];
+INT32U	gP2PPlayfileTaskStack[TASK_P2P_PLAYFILE_STACK_SIZE-1];
+OS_STK	IOTCcmdTaskStack[IOTC_CMD_TASK_STACK_SIZE];
+
+char	timezone_des[256]="Taiwan";
+u8* codeAddr = (u8*)(SdramBase + SDRAM_SIZE - 0x190000); //back 1.6M
+u8 fw_version[30]={0};
+char FWMD5[32];
+u8 Reminder_FW_Upgrade=0;
+int P2P_AV_Source[MAX_AV_CH];
+u8  LocalChannelSource; // ch0 source
+u8 Remoteplayback_CH;
+s32 idx; //Progress of the f/w dowoloading 
+u8 OnlineUpdateStatus;
+unsigned long gP2PStatus;
+int CurrPlaybackSID;
+u8 Link_AV[MAX_AV_CH]={0};
+
+#if(HOME_RF_SUPPORT)
+u8 gAppPairFlag=0;  /* 0: None, 1: Pair Success, 2: Pair Fail */
+u32 gPairAvIndex;
+u8 APPversion_IOS[16]  = "IOS_1.0.0.18";
+u8 APPversion_AND[16] = "AND_1.0.0.32";
+u8 APPSensorListStatus=0;
+u32 APPSensorStatus=0;
+u8 APPRoomListStatus=0;
+u8 APPSceneListStatus=0;
+#endif
+u32 iCommAudioRetWrite_idx=0;
+u32 iCommAudioRetPlay_idx=0;
+u8 iComm_speak=0;
+#if SYSTEM_DEBUG_SD_LOG
+u8 Start_Record = 0;
+#endif
+u8 Enter_Wifi_Connect = 0;	// 1: Enter Wifi Connect Mode.
+u8 Enter_Wifi_Scan = 0;		// 1: Enter Wifi Scan Mode.
+u8 WiFi_Mode = 0;			// 1: STA Mode, 0: AP Mode.
+u8 Get_IP = 0;				// 1: Got IP.
+u8 Force_RESET_TUTK = 0;
+struct hostent {
+    char  *h_name;      /* Official name of the host. */
+    char **h_aliases;   /* A pointer to an array of pointers to alternative host names,
+                           terminated by a null pointer. */
+    int    h_addrtype;  /* Address type. */
+    int    h_length;    /* The length, in bytes, of the address. */
+    char **h_addr_list; /* A pointer to an array of pointers to network addresses (in
+                           network byte order) for the host, terminated by a null pointer. */
+#define h_addr h_addr_list[0] /* for backward compatibility */
+};
+
+/*
+ *********************************************************************************************************
+ * Extern Variables
+ *********************************************************************************************************
+ */
+extern u8	uiVersion[32];
+extern u8 rfiuAudioZeroBuf[RFI_AUIDIO_SILENCE_SIZE];
+extern u8 uiP2PID[];
+extern VIDEO_BUF_MNG rfiuRxVideoBufMng[MAX_RFIU_UNIT][VIDEO_BUF_NUM]; 
+extern u32 rfiuRxVideoBufMngWriteIdx[MAX_RFIU_UNIT];
+extern IIS_BUF_MNG rfiuRxIIsSounBufMng[MAX_RFIU_UNIT][IIS_BUF_NUM]; 
+extern u32 rfiuRxIIsSounBufMngWriteIdx[MAX_RFIU_UNIT];
+extern u8 *rfiuAudioRetDMANextBuf[RFI_AUDIO_RET_BUF_NUM];
+extern u32 rfiuAudioRetRec_idx;
+extern DEF_RFIU_UNIT_CNTL gRfiuUnitCntl[MAX_RFIU_UNIT];
+extern u32 guiRFTimerID;
+extern u8 P2P_playback_go;
+extern u8 P2P_check;
+extern int P2PSentByteCnt;
+extern unsigned int P2PPlaybackVideoStop;
+extern int net_link_status;
+extern u8  uiVersionTime[9]; /*Firmware version for MARS internal using.*/
+extern u8  uiLightTimer[MULTI_CHANNEL_MAX][4];
+extern u8 homeRFSensorName[17];
+extern u8 icomm_isr_cnt;
+extern void ssv6xxx_wifi_sta_recover();
+extern void dump_mem_pool_pbuf();
+extern struct hostent* lwip_gethostbyname(const char *name);
+#if APP_KEEP_ALIVE
+extern u8 APPConnectIcon;
+#endif
+
+/*
+ *********************************************************************************************************
+ * Function prototype
+ *********************************************************************************************************
+ */ 
+void Task_Listen(void *pdata);
+void client_p2pdisconnected(int SID);
+void SendVideoFrameData(int SID, u32 time, u32 flag, int size, char *buf);
+static void UCT_to_Local_convert_playfile(SMsgAVIoctrlPlayRecord *p);
+static void Local_to_UCT_convert(STimeDay *q);
+static void UCT_to_Local_convert(SMsgAVIoctrlListEventReq *p);
+static void SendRegister(void);
+static char *GetRegMessageString(char *UID);
+static char *GetPushMessageString(char *UID, u32 camidx, int eventType);
+static void SendPushMessage(u32 camidx, int eventType);
+static void GetFile();
+static void Handle_IOCTRL_Cmd(int SID, int avIndex, char *buf);
+extern void  uiSetP2PImageLevel(u8  CamId, u8 level);
+extern u8 uiSetP2PPassword(u8 *password);
+void renew_iotclModule(unsigned short port);
+extern void ClearNetworkInfo();
+extern u8 SetLwIP(u8 mode);
+void UpdateAPPLightStatus(u8 Camid);
+void ResetALL();
+
+//------------------------------------code--------------------------------------//
+/*
+ * Ascii internet address interpretation routine.
+ * The value returned is in network order.
+ */
+#define INADDR_NONE         ((u32_t)0xffffffff)  /* 255.255.255.255 */
+
+u32_t inet_addr(const char *cp)
+{
+  struct in_addr val;
+
+  if (inet_aton2(cp, &val)) {
+    return (val.s_addr);
+  }
+  return (INADDR_NONE);
+}
+
+/*
+ * Check whether "cp" is a valid ascii representation
+ * of an Internet address and convert to a binary address.
+ * Returns 1 if the address is valid, 0 if not.
+ * This replaces inet_addr, the return value from which
+ * cannot distinguish between failure and a local broadcast address.
+ */
+int inet_aton2(const char *cp, struct in_addr *addr)
+{
+  u32_t val;
+  int base, n, c;
+  u32_t parts[4];
+  u32_t *pp = parts;
+
+  c = *cp;
+  for (;;) {
+    /*
+     * Collect number up to ``.''.
+     * Values are specified as for C:
+     * 0x=hex, 0=octal, 1-9=decimal.
+     */
+    if (!isdigit(c))
+      return (0);
+    val = 0;
+    base = 10;
+    if (c == '0') {
+      c = *++cp;
+      if (c == 'x' || c == 'X') {
+        base = 16;
+        c = *++cp;
+      } else
+        base = 8;
+    }
+    for (;;) {
+      if (isdigit(c)) {
+        val = (val * base) + (int)(c - '0');
+        c = *++cp;
+      } else if (base == 16 && isxdigit(c)) {
+        val = (val << 4) | (int)(c + 10 - (islower(c) ? 'a' : 'A'));
+        c = *++cp;
+      } else
+        break;
+    }
+    if (c == '.') {
+      /*
+       * Internet format:
+       *  a.b.c.d
+       *  a.b.c   (with c treated as 16 bits)
+       *  a.b (with b treated as 24 bits)
+       */
+      if (pp >= parts + 3)
+        return (0);
+      *pp++ = val;
+      c = *++cp;
+    } else
+      break;
+  }
+  /*
+   * Check for trailing characters.
+   */
+  if (c != '\0' && (!isprint(c) || !isspace(c)))
+    return (0);
+  /*
+   * Concoct the address according to
+   * the number of parts specified.
+   */
+  n = pp - parts + 1;
+  switch (n) {
+
+  case 0:
+    return (0);       /* initial nondigit */
+
+  case 1:             /* a -- 32 bits */
+    break;
+
+  case 2:             /* a.b -- 8.24 bits */
+    if (val > 0xffffff)
+      return (0);
+    val |= parts[0] << 24;
+    break;
+
+  case 3:             /* a.b.c -- 8.8.16 bits */
+    if (val > 0xffff)
+      return (0);
+    val |= (parts[0] << 24) | (parts[1] << 16);
+    break;
+
+  case 4:             /* a.b.c.d -- 8.8.8.8 bits */
+    if (val > 0xff)
+      return (0);
+    val |= (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8);
+    break;
+  }
+  if (addr)
+    addr->s_addr = htonl(val);
+  return (1);
+}
+
+/* Convert numeric IP address into decimal dotted ASCII representation.
+ * returns ptr to static buffer; not reentrant!
+ */
+char * inet_ntoa(struct in_addr addr)
+{
+  static char str[16];
+  u32_t s_addr = addr.s_addr;
+  char inv[3];
+  char *rp;
+  u8_t *ap;
+  u8_t rem;
+  u8_t n;
+  u8_t i;
+
+  rp = str;
+  ap = (u8_t *)&s_addr;
+  for(n = 0; n < 4; n++) {
+    i = 0;
+    do {
+      rem = *ap % (u8_t)10;
+      *ap /= (u8_t)10;
+      inv[i++] = '0' + rem;
+    } while(*ap);
+    while(i--)
+      *rp++ = inv[i];
+    *rp++ = '.';
+    ap++;
+  }
+  *--rp = 0;
+  return str;
+}
+
+/*
+ * These are reference implementations of the byte swapping functions.
+ * Again with the aim of being simple, correct and fully portable.
+ * Byte swapping is the second thing you would want to optimize. You will
+ * need to port it to your architecture and in your cc.h:
+ * 
+ * #define LWIP_PLATFORM_BYTESWAP 1
+ * #define LWIP_PLATFORM_HTONS(x) <your_htons>
+ * #define LWIP_PLATFORM_HTONL(x) <your_htonl>
+ *
+ * Note ntohs() and ntohl() are merely references to the htonx counterparts.
+ */
+
+/*Return which channel was streaming by APP.*/
+int StreamingCH_by_APP()
+{
+	int ViewCH;
+	int ch;
+	ViewCH=0;
+	for (ch=0;ch<MAX_AV_CH;ch++)
+	{
+		
+		if(P2PEnableStreaming[ch]>0)
+			ViewCH=ViewCH|(1<<ch);
+	}
+	return ViewCH;
+}
+
+/*Checking P2P information*/
+void Check_P2P_info(int *p2p_info)
+{
+    //int p2p_info;
+     IOTC_Get_Login_Info(p2p_info);
+     *p2p_info=*p2p_info&0x07;
+     DEBUG_P2P("P2P INFO: %x.\n",*p2p_info);   
+}
+
+/*Load time zone description*/
+void Load_timezone_des(char *des)
+{
+	strcpy(timezone_des,des);
+}	
+
+/*Return net link status*/
+int Get_network_status()
+{
+	return net_link_status;
+}
+
+/*Register APN Server*/
+static char *GetRegMessageString(char *UID)
+{
+	static char msgBuf[2048];
+
+#if(HW_BOARD_OPTION == MR8211_ZINWELL)	
+	sprintf(msgBuf, "GET /apns/apns.php?cmd=reg_server&uid=%s HTTP/1.1\r\n"
+		"Host: %s\r\n"
+		"Connection: keep-alive\r\n"
+		"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+		"Accept: */*\r\n""Accept-Encoding: gzip,deflate,sdch\r\n"
+		"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+		"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n""Pragma: no-cache\r\n"
+		"Cache-Control: no-cache\r\n"
+		"\r\n", UID,inet_ntoa(gPushMsgSrvAddr.sin_addr));
+#else
+sprintf(msgBuf, "GET /tpns/apns.php?cmd=reg_server&uid=%s HTTP/1.1\r\n"
+		"Host: %s\r\n"
+		"Connection: keep-alive\r\n"
+		"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+		"Accept: */*\r\n""Accept-Encoding: gzip,deflate,sdch\r\n"
+		"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+		"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n""Pragma: no-cache\r\n"
+		"Cache-Control: no-cache\r\n"
+		"\r\n", UID,inet_ntoa(gPushMsgSrvAddr.sin_addr));
+#endif
+	return msgBuf;
+}
+
+static void SendRegister()
+{
+	int skt;
+	int err;
+	char    hostname_IP[50]="";
+	char hostname[50];
+	struct hostent *addr;
+
+	strcpy(hostname,TPNS_SERVER);
+	addr = lwip_gethostbyname(hostname);
+    if (addr == NULL)
+    {
+		DEBUG_P2P("Parse TPNS_SERVER fail...\n");
+		err = -1;	//Retry TPNS_SERVER2
+	}
+    else
+	{
+		memcpy(&hostname_IP,ip_ntoa((ip_addr_t*)addr->h_addr_list[0]),sizeof(hostname_IP));
+		DEBUG_P2P("Get TPNS_SERVER,IP = %s\n",hostname_IP);
+		
+		DEBUG_P2P("Register the TPNS servre.\n");
+		gPushMsgSrvAddr.sin_addr.s_addr=inet_addr(hostname_IP);
+		gPushMsgSrvAddr.sin_port = htons(PORT_TPNS);
+		gPushMsgSrvAddr.sin_family = AF_INET;
+
+		if ((skt = (int)socket(AF_INET, SOCK_STREAM, 0)) >=0)
+		{	
+			if (connect(skt, (struct sockaddr *)&gPushMsgSrvAddr, sizeof(struct sockaddr_in)) == 0)
+			{
+				char *msg = GetRegMessageString(gUID);
+				if(send(skt, msg, strlen(msg), 0)<0)
+				{
+					DEBUG_P2P("Register Fail\n");
+					err=-1;
+				}	
+				else
+				{
+					DEBUG_P2P("Register OK\n");
+					err=0;
+				}	
+			}
+			else
+			{
+				DEBUG_P2P("TPNS1 Connnection fail.\n");
+				err=-1;
+			}	
+			close(skt);
+		}	
+	}
+	/*Register backup TPNS server.*/
+	if(err!=0)
+	{
+		strcpy(hostname,TPNS_SERVER2);
+		addr = lwip_gethostbyname(hostname);
+		if (addr == NULL)
+			DEBUG_P2P("Parse TPNS_SERVER2 fail...\n"); 	
+      	else
+      	{  	
+			memcpy(&hostname_IP,ip_ntoa((ip_addr_t*)addr->h_addr_list[0]),sizeof(hostname_IP));
+         	DEBUG_P2P("Get TPNS_SERVER2 IP = %s\n",hostname_IP);		
+			DEBUG_P2P("Register the TPNS2 servre.\n");
+			gPushMsgSrvAddr.sin_addr.s_addr=inet_addr(hostname_IP);
+			gPushMsgSrvAddr.sin_port = htons(PORT_TPNS);
+			gPushMsgSrvAddr.sin_family = AF_INET;
+
+			if ((skt = (int)socket(AF_INET, SOCK_STREAM, 0)) >=0)
+			{	
+				if (connect(skt, (struct sockaddr *)&gPushMsgSrvAddr, sizeof(struct sockaddr_in)) == 0)
+				{
+					char *msg = GetRegMessageString(gUID);
+					if(send(skt, msg, strlen(msg), 0)<0)
+						DEBUG_P2P("Register Fail\n");
+					else
+						DEBUG_P2P("Register OK\n");
+				}
+				else
+				{
+					DEBUG_P2P("TPNS2 Connnection fail.\n");
+				}	
+				close(skt);
+			}
+		}	
+	}	
+}
+
+void SetPushMsgDelay(int delay)
+{
+	gPushDuration=delay;
+}
+
+
+/*****************************************
+Input : Packet Data
+Return: 0	ERROR
+		2	Status: 200 OK
+		3	Status: Object Moved
+		4	Status: Access Denied
+		5	Status: Internal Server Error
+*****************************************/
+u8 ParsingHTTPHeader(u8* packet, u16 packet_len)
+{
+	u8* body;
+
+	//printf("\x1B[96m packet_len:%d, %s \x1B[0m\n",packet_len,packet);
+	if(packet_len == 0)		//Null Data
+		return 0;
+	
+	body=strstr(packet,"HTTP");
+	
+	if(body[9] == 	   '2') 		// 2xx OK
+		return 2;	
+	else if(body[9] == '3')	// 3xx redirect
+		return 3;
+	else if(body[9] == '4')	// 4xx Error
+		return 4;
+	else if(body[9] == '5')	// 5xx Server Error
+		return 5;
+	else
+		return 0;
+}
+
+#if AutoNTPupdate
+s8 SendGetTimeZoneMessage(void)
+{
+	int skt,err,on=1;
+	char *msg;
+	u8	timezoneMsg[512];
+	u8	TimeZone_ACK[256];
+	u8* body;
+	u8 	ack_ret,i,retry=0;
+	RTC_TIME_ZONE TimeZone;
+    char hex_num[3],temp_char[2];
+    char hostname_IP[50]="";
+    char hostname[50];
+	struct sockaddr_in TimeZoneSrvAddr;
+	
+	#define TimeZonePort	80
+	#define TimeZoneServer	"timezone.mars-cloud.com"
+	#define TimeZoneServer2	"timezone2.mars-cloud.com"
+
+Retry:
+	if(!retry)
+    	strcpy(hostname,TimeZoneServer);
+    else
+    	strcpy(hostname,TimeZoneServer2);    
+    err=DN2IP(hostname,hostname_IP);
+    
+	TimeZoneSrvAddr.sin_addr.s_addr=inet_addr(hostname_IP);
+	TimeZoneSrvAddr.sin_port = htons(TimeZonePort);
+	TimeZoneSrvAddr.sin_family = AF_INET;
+
+    if ((skt = (int)socket(AF_INET, SOCK_STREAM, 0)) >= 0)
+    {
+        setsockopt(skt,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on));/*Check the TCP connection whether alive.*/ 
+        if (connect(skt, (struct sockaddr *)&TimeZoneSrvAddr, sizeof(struct sockaddr_in)) == 0)
+        {
+            DEBUG_P2P("Sending TimeZone MSG\n");
+
+			sprintf(timezoneMsg,"GET /api/getGeoInfo HTTP/1.1\r\n"
+								"Host: timezone.mars-cloud.com\r\n"
+								"Connection: keep-alive\r\n"
+								"Cache-Control: max-age=0\r\n"
+								"Upgrade-Insecure-Requests: 1\r\n"
+								"User-Agent: Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36\r\n"
+								"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\n"
+								"Accept-Encoding: gzip, deflate\r\n"
+								"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n\r\n");
+
+			
+
+			//printf("\x1B[96m%s\x1B[0m\n",timezoneMsg);
+			
+            if(send(skt, timezoneMsg, strlen(timezoneMsg), 0)<0)
+            {
+                DEBUG_P2P("Send TimeZone MSG Fail.\n");
+                if(!retry)
+	            {
+	            	DEBUG_P2P("Retry TimeZone MSG\n");
+	            	retry = 1;
+	            	close(skt);
+	            	goto Retry;
+	            }
+                return 100;
+            }    
+            else
+            {
+                DEBUG_P2P("Send TimeZone MSG Event Success.\n");
+				memset(TimeZone_ACK, 0, sizeof(TimeZone_ACK));
+	            recv(skt, TimeZone_ACK, sizeof(TimeZone_ACK), 0);  //200 OK	
+
+				ack_ret = ParsingHTTPHeader(TimeZone_ACK, strlen(TimeZone_ACK));
+				if(ack_ret != 2)
+				{
+					DEBUG_P2P("%s\n",TimeZone_ACK);
+				}
+				else
+				{
+					memset(TimeZone_ACK, 0, sizeof(TimeZone_ACK));
+					recv(skt, TimeZone_ACK, sizeof(TimeZone_ACK), 0);  //DATA
+					
+					//printf("\x1B[96m%s\x1B[0m\n",TimeZone_ACK);
+					body=strstr(TimeZone_ACK,"time_offset");
+
+					if(body[13] == '-')
+					{
+						TimeZone.operator= 1;
+						if(body[14] == '1')
+						{
+							memset(hex_num,0,sizeof(hex_num)); /*Convert Second*/
+							for(i=0;i<2;i++)
+							{
+								sprintf(temp_char,"%c",body[14+i]);
+								strcat(hex_num,temp_char);
+							}
+							hex_num[3]='\0';
+
+							//TimeZone = 0-strtoul(hex_num,NULL,10); 
+							TimeZone.hour = strtoul(hex_num,NULL,10);
+						}
+						else
+						{
+							sprintf(hex_num,"%c",body[14]);
+							//TimeZone = 0-strtoul(hex_num,NULL,10); 
+							TimeZone.hour = strtoul(hex_num,NULL,10);
+						}
+					}
+					else
+					{
+						if(body[13] == '1')
+						{
+							memset(hex_num,0,sizeof(hex_num)); /*Convert Second*/
+							for(i=0;i<2;i++)
+							{
+								sprintf(temp_char,"%c",body[13+i]);
+								strcat(hex_num,temp_char);
+							}
+							hex_num[3]='\0';
+
+							//TimeZone = strtoul(hex_num,NULL,10); 
+							TimeZone.hour = strtoul(hex_num,NULL,10);
+						}
+						else
+						{
+							sprintf(hex_num,"%c",body[13]);
+							//TimeZone = strtoul(hex_num,NULL,10); 
+							TimeZone.hour = strtoul(hex_num,NULL,10);
+						}
+
+					}
+					TimeZone.min = 0;
+					printf("\x1B[96mTimeZone = %d %d:%d\x1B[0m\n",TimeZone.operator,TimeZone.hour,TimeZone.min);
+					//RTC_Set_TimeZone(&TimeZone);
+
+					
+				}
+            }		
+        }
+        else
+        {		
+            DEBUG_P2P("Couldn't send TimeZone MSG\n");
+            
+            if(!retry)
+            {
+            	DEBUG_P2P("Retry TimeZone MSG\n");
+            	retry = 1;
+            	goto Retry;
+            }
+            return 100;
+        }    
+        close(skt);
+		if(TimeZone.operator)
+			return (0-TimeZone.hour);
+		else
+			return TimeZone.hour;
+        
+    }
+    else
+    {
+        DEBUG_P2P("Create socket fail.\n");  
+        if(!retry)
+        {
+			DEBUG_P2P("Retry TimeZone MSG\n");        
+        	retry = 1;
+        	goto Retry;
+        }
+        return 100;
+    }
+    
+}
+#endif
+
+/*Raising event to APN server*/
+static char *GetPushMessageString(char *UID, u32 camidx, int eventType)
+{
+
+    /*Content of event*/
+    char EventString[5][50]={"%20[Voice]",
+    						 "%20[Battery]",
+    						 "%20[PIR_Trigger]",
+    						 "%20[DOOR_OPEN]",
+    						 "%20[Siren_Switch_ON]"
+    						};
+    char EventTime[20];
+    char str[50];
+    char channel[5];
+    //char sensor_id[10];
+    char sensor_name[19];
+    static char msgBuf[2048];
+    RTC_DATE_TIME   localTime;
+    u32 LocalTimeInSec;
+    char deviceUID[21];
+	int i;
+    RTC_Get_Time(&localTime);
+	LocalTimeInSec=RTC_Time_To_Second(&localTime)+946684800;
+	//DEBUG_P2P("UNIX=%d\n",LocalTimeInSec);
+	
+	memset_hw(deviceUID,0,21);
+	strncpy(deviceUID,UID,20);
+        
+#if	0
+/*Send event type to APP.*/
+sprintf(msgBuf, "GET /tpns/apns.php?cmd=raise_event&uid=%s&event_type=%d&event_time=%lu HTTP/1.1\r\n"
+"Host: %s\r\n"
+"Connection: keep-alive\r\n"
+"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+"Accept: */*\r\n"
+"Accept-Encoding: gzip,deflate,sdch\r\n"
+"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n"
+"Pragma: no-cache\r\n"
+"Cache-Control: no-cache\r\n"
+"\r\n", deviceUID, eventType,LocalTimeInSec,inet_ntoa(gPushMsgSrvAddr.sin_addr));
+#elif 0//(HOME_RF_SUPPORT)
+sprintf(sensor_id,"536870913");
+sprintf(EventTime,"%d/%02d/%02d-%02d:%02d",localTime.year+2000,localTime.month,localTime.day,localTime.hour,localTime.min);
+sprintf(msgBuf, "GET /tpns/apns.php?cmd=raise_event&uid=%s&event_type=100&event_time=%lu&msg=%s%s%s HTTP/1.1\r\n"
+"Host: %s\r\n"
+"Connection: keep-alive\r\n"
+"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+"Accept: */*\r\n"
+"Accept-Encoding: gzip,deflate,sdch\r\n"
+"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n"
+"Pragma: no-cache\r\n"
+"Cache-Control: no-cache\r\n"
+"\r\n", deviceUID,LocalTimeInSec,homeRFSensorName,sensor_id,EventTime,inet_ntoa(gPushMsgSrvAddr.sin_addr));
+#endif
+
+#if HOME_RF_SUPPORT
+/*Send HA Sensor to APP directly.*/
+    if (eventType > 1)
+    {
+
+		sprintf(EventTime,"%d/%02d/%02d-%02d:%02d",localTime.year+2000,localTime.month,localTime.day,localTime.hour,localTime.min);
+		strcat(EventTime, "%20[");
+		sysAppGetSensorName(camidx);
+		memset(sensor_name, 0, sizeof(sensor_name));
+		strncpy(sensor_name,homeRFSensorName,16);
+		for(i=0;i<16;i++)
+			if(sensor_name[i] == ' ')
+				sensor_name[i] = '_';
+		strcat(sensor_name, "]%20");
+		
+		sprintf(msgBuf, "GET /tpns/apns.php?cmd=raise_event&uid=%s&event_type=100&event_time=%lu&msg=%s%s%s HTTP/1.1\r\n"
+		"Host: %s\r\n"
+		"Connection: keep-alive\r\n"
+		"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+		"Accept: */*\r\n"
+		"Accept-Encoding: gzip,deflate,sdch\r\n"
+		"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+		"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n"
+		"Pragma: no-cache\r\n"
+		"Cache-Control: no-cache\r\n"
+		"\r\n", deviceUID,LocalTimeInSec,EventTime,sensor_name,deviceUID,inet_ntoa(gPushMsgSrvAddr.sin_addr));
+	}
+    else
+#endif		
+    {
+/*Send string to APP directly.*/
+		strcpy(str,EventString[eventType]);
+		sprintf(EventTime,"%d/%02d/%02d-%02d:%02d",localTime.year+2000,localTime.month,localTime.day,localTime.hour,localTime.min);
+		strcat(EventTime, "%20");
+		sprintf(channel, "CH%d", camidx+1);
+		strcat(channel, str);
+		sprintf(msgBuf, "GET /tpns/apns.php?cmd=raise_event&uid=%s&event_type=100&event_time=%lu&msg=%s%s%s HTTP/1.1\r\n"
+		"Host: %s\r\n"
+		"Connection: keep-alive\r\n"
+		"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+		"Accept: */*\r\n"
+		"Accept-Encoding: gzip,deflate,sdch\r\n"
+		"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+		"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n"
+		"Pragma: no-cache\r\n"
+		"Cache-Control: no-cache\r\n"
+		"\r\n", deviceUID,LocalTimeInSec,EventTime,channel,deviceUID,inet_ntoa(gPushMsgSrvAddr.sin_addr));
+    }
+
+return msgBuf;
+}
+
+static void SendPushMessage(u32 camidx, int eventType)
+{
+	int skt;
+	char *msg;
+    int ret;
+    int on=1;
+	
+	if (gPushMsgSrvAddr.sin_addr.s_addr == 0)
+	{
+		DEBUG_P2P("No push message server\n");
+        SendRegister();
+		//return;
+	}
+	if ((skt = (int)socket(AF_INET, SOCK_STREAM, 0)) >= 0)
+	{
+	    ret=setsockopt(skt,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on));/*Check the TCP connection whether alive.*/ 
+		if (connect(skt, (struct sockaddr *)&gPushMsgSrvAddr, sizeof(struct sockaddr_in)) == 0)
+		{
+			DEBUG_P2P("Sending push MSG\n");
+			msg = GetPushMessageString(gUID, camidx, eventType);
+			if(send(skt, msg, strlen(msg), 0)<0)
+			{
+				DEBUG_P2P("Send MSG Fail.\n");
+                ret=-1;
+			}    
+			else
+			{
+				DEBUG_P2P("Send MSG Success.\n");	
+                ret=0;
+			}    
+		}
+		else
+		{
+			DEBUG_P2P("Couldn't send MSG\n");
+            ret=-1;
+		}    
+		close(skt);
+		if(ret<0)	/*Register TPNS server again, when sending push notification fail.*/
+			SendRegister();	
+        }
+	else
+       DEBUG_P2P("Create socket fail.\n");    
+}
+
+#define CLOUD_PUSH_MSG	"POST /api/pushmsg?uuid=%s HTTP/1.1\r\n""Host: pushmsg.mars-cloud.com\r\n""Connection: keep-alive\r\n""User-Agent: Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36\r\n""Content-Type: text/plain;charset=UTF-8\r\n""Accept: */*\r\n""Accept-Encoding: gzip, deflate\r\n""Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n""Content-Length: %d\r\n\r\n%s"
+
+static char *SendCloud_Push(int eventType)
+{
+    char EventString[2][50]={"%20[Voice]",
+    						 "%20[Battery]"
+    						};
+    char msg[1024];
+    char CONTENT_DATA[64];
+    
+    char JSON_CONTENT_DATA[128];
+    int Content_Len;
+    char EventTime[20];
+    RTC_DATE_TIME   localTime;
+    u32 LocalTimeInSec;
+    
+    RTC_Get_Time(&localTime);
+	LocalTimeInSec=RTC_Time_To_Second(&localTime)+946684800;
+
+	sprintf(EventTime,"%d/%02d/%02d-%02d:%02d",localTime.year+2000,localTime.month,localTime.day,localTime.hour,localTime.min);
+	strcat(EventTime, "%20");
+	strcpy(CONTENT_DATA,EventTime);
+	strcat(CONTENT_DATA, "%20");
+	strcat(CONTENT_DATA, EventString[eventType]);
+
+    sprintf(JSON_CONTENT_DATA,  "{"
+            "\"uuid\":\"%s\","
+            "\"alert\":\"%s\","
+            "\"timestamp\":\"0001\""
+            "}",
+            gUID,
+            CONTENT_DATA);
+
+
+    Content_Len = strlen(JSON_CONTENT_DATA);
+
+    memset(msg, 0, sizeof(msg));
+
+    sprintf(msg, CLOUD_PUSH_MSG ,gUID, Content_Len,JSON_CONTENT_DATA);
+    //printf("\x1B[96m%s\x1B[0m\n",msg);
+    return msg;
+}
+
+void SendCloud_Push_Message(int eventType)
+{
+	char CLOUD_ACK[128];
+    int skt;
+    char *msg;
+    int on=1,temp;
+
+    struct sockaddr_in cloudMsgAddr;
+    char hostname[64]="";
+    char hostname_IP[32]="";
+    u8 ack_ret;
+	struct hostent *addr;
+	
+    strcpy(hostname,CLOUD_PUSH_SERVER);
+
+	addr = lwip_gethostbyname(hostname);
+    if (addr == NULL)
+    {
+		DEBUG_P2P("Parse CLOUD_PUSH_SERVER fail...\n");
+		return;
+	}
+	
+	memcpy(&hostname_IP,ip_ntoa((ip_addr_t*)addr->h_addr_list[0]),sizeof(hostname_IP));
+
+    memset(&cloudMsgAddr, 0, sizeof(struct sockaddr_in));
+    cloudMsgAddr.sin_family = AF_INET;
+    cloudMsgAddr.sin_addr.s_addr=inet_addr(hostname_IP);
+    cloudMsgAddr.sin_port = htons(PORT_CLOUD_PUSH);
+
+    if ((skt = (int)socket(AF_INET, SOCK_STREAM, 0)) >= 0)
+    {
+        setsockopt(skt,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on));/*Check the TCP connection whether alive.*/
+
+        if (connect(skt, (struct sockaddr *)&cloudMsgAddr, sizeof(struct sockaddr_in)) == 0)
+        {
+        	msg = SendCloud_Push(eventType);
+            DEBUG_P2P("Sending cloud MSG\n");
+            if(send(skt, msg, strlen(msg), 0)<0)
+            {
+                DEBUG_P2P("Send Cloud Push MSG Fail.\n");
+            }
+            else
+            {
+                memset(CLOUD_ACK, 0, sizeof(CLOUD_ACK));
+                recv(skt, CLOUD_ACK, sizeof(CLOUD_ACK), 0);  //200 OK
+                ack_ret = ParsingHTTPHeader(CLOUD_ACK, strlen(CLOUD_ACK));
+                if(ack_ret != 2)
+                {
+                    DEBUG_P2P("%s\n",CLOUD_ACK);
+                }
+
+                DEBUG_P2P("Send Cloud Push MSG Success.\n");
+            }
+        }
+        else
+        {
+            DEBUG_P2P("Couldn't send Cloud Push MSG\n");
+        }
+        close(skt);
+    }
+    else
+    {
+        DEBUG_P2P("Create socket fail.\n");
+    }
+}
+
+void P2PSendEvent(u32 camidx,u32 eventType)
+{
+	unsigned int current_time;
+	
+	if(WiFi_Mode == 0)	//Sean: Check IP ready or not.
+		return;
+		
+    current_time=OSTimeGet();
+    if(((current_time-gPushMsgTime)>600)&&(gP2PStatus==7)) //30 sec
+	{
+    	DEBUG_P2P("Ready send MSG.\n");
+		SendPushMessage(camidx, eventType);	//TUTK use.
+		SendCloud_Push_Message(eventType);
+		gPushMsgTime=OSTimeGet();
+	}
+}	
+
+/*Firmware Upgrade via internet.*/
+void Upgrade_fw_net()
+{
+	char fw_name[30];
+
+	GetFile("MD5SUM");
+	//if(GetFile("MD5SUM")==0)
+	{
+	DEBUG_P2P("FWMD5=%s\n",FWMD5);
+	strcpy(fw_name,fw_version);
+	strcat(fw_name,".bin");
+	GetFile(fw_name);
+		//if(GetFile(fw_name)<0)
+			//DEBUG_P2P("Get firmware fail!\n");	
+	}
+	//else
+		//DEBUG_P2P("Get MD5SUM fail!\n");
+}
+
+void Set_UpgradeServer(void)
+{
+	s32 		RetVal;
+	u8			err, i;
+	FS_FILE*	pFile;
+
+	DEBUG_P2P("Set_UpgradeServer.\n");
+	
+	//FW_UPGRAD_flag = 1;
+	uiCaptureVideoStop();
+	for ( i = RFIU_TASK_PRIORITY_HIGH; i < MAIN_TASK_PRIORITY_END; i++)
+	{
+		if ((i == SYSTIMER_TASK_PRIORITY) ||
+			(i == UI_TASK_PRIORITY) ||
+			(i == TIMER_TICK_TASK_PRIORITY) ||
+			(i == UARTCMD_TASK1_PRIORITY) ||
+			(i == SYSBACK_NET_TASK_PRIORITY)||
+			(i == ICOMM_TASK_01_PRIORITY)||
+			(i == ICOMM_TASK_02_PRIORITY)||
+			(i == ICOMM_TASK_03_PRIORITY)||
+			(i == ICOMM_TASK_04_PRIORITY)||
+			(i == ICOMM_TASK_05_PRIORITY)||
+			(i == ICOMM_TASK_06_PRIORITY)||
+			(i == ICOMM_TASK_07_PRIORITY)||
+			(i == ICOMM_TASK_08_PRIORITY)||
+			(i == ICOMM_TASK_09_PRIORITY)||
+			(i == ICOMM_TASK_10_PRIORITY)||
+			(i == ICOMM_TASK_11_PRIORITY)||
+			(i == ICOMM_TASK_12_PRIORITY)||
+			(i == ICOMM_TASK_13_PRIORITY)||
+			(i == ICOMM_TASK_14_PRIORITY)||
+			(i == IOTC_CMD_TASK_PRIORITY)||
+			(i == IOTC_ROUTINE_TASK_PRIORITY)||
+			(i == IOTC_TRANSMISSION_TASK_PRIORITY)
+			)
+			
+		{
+			continue;
+		}
+		DEBUG_P2P("OSTaskDel %d!\n",i);
+		OSTaskSuspend(i);
+	}
+	sysback_Net_SetEvt(SYS_BACKRF_NTE_FW_UPDATE, 0, 0);
+}
+
+
+static void check_fw(char *version)
+{
+
+	char urlfile[100];
+	int skt;
+	int bytesRecv;
+	s32 idx;
+	char req_fw_version[1024];
+	char *ver;
+	u8 ver_len;
+	int result;
+	int retry;
+	int err;
+	char hostname_IP[50]="";
+	char hostname[50];
+	int on=1;
+	int i=0;
+	struct hostent *addr;
+
+ 	u8* codeAddr = iotcBuf;
+	u8* body;
+	unsigned char digest[16];
+	MD5_CTX ctx;
+	char buf2[50];
+	char buf3[2];
+
+
+	
+	strcpy(hostname,FW_SERVER);
+
+	addr = lwip_gethostbyname(hostname);
+	printf("\x1B[96m %s \x1B[0m\n",ip_ntoa((ip_addr_t*)addr->h_addr_list[0]));
+    if (addr != NULL)
+    {
+        memcpy(&hostname_IP,ip_ntoa((ip_addr_t*)addr->h_addr_list[0]),sizeof(hostname_IP));
+        DEBUG_P2P("Get FW_SERVER,IP = %s\n",hostname_IP);
+	}
+	else
+	{
+		DEBUG_P2P("Parse FW_SERVER fail...\n");
+		ver=0;
+		strcpy(version,ver);
+		return;
+	}
+	
+	memset(urlfile, 0, 100);
+	sprintf(urlfile, "%sVersion.ini",FW_PATH);
+	DEBUG_P2P("Get %s\n",urlfile);
+	//uiSetRfDisplayMode(4);// 4="UI_MENU_RF_ENTER_SETUP" Enter Menu mode to alloc 8MB memory for f/w upgrade.
+	//gFWSrvAddr.sin_addr.s_addr=inet_addr("119.81.84.106");
+	gFWSrvAddr.sin_addr.s_addr=inet_addr(hostname_IP);	
+	gFWSrvAddr.sin_port = htons(PORT_FW);
+	gFWSrvAddr.sin_family = AF_INET;
+
+	if ((skt = (int)socket(AF_INET, SOCK_STREAM, 0)) >=0)
+	{	result=-1;
+		retry=0;
+		setsockopt(skt,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on));
+		while(result<0)
+	{	
+			result=connect(skt, (struct sockaddr *)&gFWSrvAddr, sizeof(struct sockaddr_in));
+			retry++;
+			if(result<0)
+			{
+				close(skt);
+				(skt = (int)socket(AF_INET, SOCK_STREAM, 0));
+			}
+			if(retry>10)
+				break;
+		}
+		if(result==0)
+		{
+memset(req_fw_version, 0,1024);		
+sprintf(req_fw_version, "GET %s HTTP/1.1\r\n"
+"Host: %s\r\n"
+"Connection: keep-alive\r\n"
+"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+"Accept: text/html, application/xhtm l+xml,applicatio n/xml;q=0.9,*/*; q=0.8\r\n"
+"Accept-Encoding: gzip,deflate,sdch\r\n"
+"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n"
+"Cache-Control: no-cache\r\n"
+"\r\n",urlfile,inet_ntoa(gFWSrvAddr.sin_addr));
+			send(skt, req_fw_version,strlen(req_fw_version), 0);			
+			idx=0;
+			memset(req_fw_version, 0,1024);
+			while(1)
+			{
+				if(net_link_status==NET_LINK_OFF)
+				{
+					DEBUG_P2P( "NET_LINK_OFF.\n");
+					ver=0;
+					break;
+				}	
+				bytesRecv = recv(skt, req_fw_version+idx, 1024, 0 );
+				if ( bytesRecv  < 0  )
+				{
+					DEBUG_P2P( "Connection Closed.\n");
+					ver=0;
+					break;
+				}
+				else if(bytesRecv==0)
+				{
+					DEBUG_P2P( "Receive file finish.\n");
+					break;
+				}	
+				else 
+				{
+					idx+=bytesRecv;
+				}	 
+			}	
+				ver=strstr(req_fw_version,"\r\n\r\n")+4;
+			if(strncmp(ver,"[VERSION=",9))
+			{
+				ver=0;
+				strcpy(version,ver);
+			}		
+			else
+			{	
+				ver=strchr(ver,'=')+1;				
+				//aher test 2015/09/04
+				//ver_len=strlen(uiVersion);
+				for(i=0;i<40;i++)
+				{
+					if(ver[i]==']')
+					{
+						break;
+					}
+				}
+				if(i>=40)
+				{
+				ver_len=strlen(uiVersion);
+				}
+				else
+				{
+					if(ver[i-1]==' ')			
+					{				
+						i--;						
+					}
+					ver_len=i;
+				}
+				ver[ver_len]='\0';
+				strcpy(fw_version,ver);					
+				ver[ver_len]='0';
+				ver=strstr(req_fw_version,"\r\n\r\n")+4;										
+				ver=strstr(ver,"\r\n\r\n")+4;			
+			if(strncmp(ver,"[DATE=",6))
+			{
+				ver=0;
+					strcpy(version,ver);					
+			}		
+			else
+			{
+			ver=strchr(ver,'=')+1;				
+				ver_len=strlen(uiVersionTime);
+				ver[ver_len]='\0';				
+				strcpy(version,ver);					
+		}
+			}			
+				//strcpy(version,ver);					
+		}
+		else
+		{
+			ver=0;
+			strcpy(version,ver);
+			DEBUG_P2P("Connect fail!\n");
+		}	
+	close(skt);
+	}
+	else
+	{
+		ver=0;
+		strcpy(version,ver);
+		DEBUG_P2P("Socket create error=%d\n",skt);
+	}	
+	return 0;
+
+   #if 0
+	sysDeadLockMonitor_OFF(); /*Turn off watch dog.*/
+	strcpy(hostname,FW_SERVER);
+	
+	addr = lwip_gethostbyname(hostname);
+	printf("\x1B[96m %s \x1B[0m\n",ip_ntoa((ip_addr_t*)addr->h_addr_list[0]));
+    if (addr != NULL)
+    {
+        memcpy(&hostname_IP,ip_ntoa((ip_addr_t*)addr->h_addr_list[0]),sizeof(hostname_IP));
+        DEBUG_P2P("Get FW_SERVER,IP = %s\n",hostname_IP);
+	}
+	else
+	{
+		DEBUG_P2P("Parse FW_SERVER fail...\n");
+	}
+
+	memset(urlfile, 0, 100);
+	sprintf(urlfile, "%s%s/%s",FW_PATH,fw_version,"MD5SUM");
+
+	DEBUG_P2P("Get %s\n",urlfile);
+	if(OnlineUpdateStatus != FW_UPGRADE_COMPLETE)
+		OnlineUpdateStatus=FW_DOWNLOADING;
+	else
+		OnlineUpdateStatus=FW_UPGRADE_COMPLETE;
+
+	gFWSrvAddr.sin_addr.s_addr=inet_addr(hostname_IP);
+	gFWSrvAddr.sin_port = htons(PORT_FW);
+	gFWSrvAddr.sin_family = AF_INET;
+
+	if ((skt = (int)socket(AF_INET, SOCK_STREAM, 0)) >=0)
+	{	
+		result=-1;
+		retry=0;      
+        setsockopt(skt,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on));/*Check the TCP connection whether alive.*/
+           printf("\x1B[96m 111111111 \x1B[0m\n");     
+		while(result<0)
+		{
+			result=connect(skt, (struct sockaddr *)&gFWSrvAddr, sizeof(struct sockaddr_in));
+			retry++;
+			if(result<0)
+			{
+				printf("\x1B[96m FAIL. \x1B[0m\n");
+				close(skt);
+				(skt = (int)socket(AF_INET, SOCK_STREAM, 0));
+			}
+			if(retry>10)
+			{
+				printf("\x1B[96m retry>10 \x1B[0m\n");
+				OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+				break;
+			}
+		}
+		printf("\x1B[96m 22222222222 \x1B[0m\n");
+		//if (connect(skt, (struct sockaddr *)&gFWSrvAddr, sizeof(struct sockaddr_in)) == 0)	
+		if(result==0)
+		{
+			printf("\x1B[96m 3333333333333 \x1B[0m\n");
+
+//memset(codeAddr, 0, code_size);		
+printf("\x1B[96m 444444444444 \x1B[0m\n");
+
+sprintf(codeAddr, "GET %s HTTP/1.1\r\n"
+"Host: %s\r\n"
+"Connection: keep-alive\r\n"
+"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+"Accept: text/html, application/xhtm l+xml,applicatio n/xml;q=0.9,*/*; q=0.8\r\n"
+"Accept-Encoding: gzip,deflate,sdch\r\n"
+"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n"
+"Cache-Control: no-cache\r\n"
+"\r\n",urlfile,inet_ntoa(gFWSrvAddr.sin_addr));
+			send(skt, codeAddr,strlen(codeAddr), 0);	
+			printf("\x1B[96m 555555555 \x1B[0m\n");
+			idx=0;
+			i=0;
+			memset(codeAddr, 0, 0x190000);	
+			printf("\x1B[96m 66666666666666 \x1B[0m\n");
+
+			while(1)
+			{
+				//printf("\x1B[96m~\x1B[0m");
+				bytesRecv = recv(skt, codeAddr+idx, 1024*1024, 0 );				
+				DEBUG_P2P("#%d",bytesRecv);
+				if ( bytesRecv < 0 )
+				{
+					DEBUG_P2P( "Connection Closed.\n");
+					OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+					OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+					
+					break;
+				}
+				else if(bytesRecv==0)
+				{
+					DEBUG_P2P( "Receive file finish.\n");
+					break;
+				}	
+				else 
+				{
+					idx+=bytesRecv;
+				}	 
+				/*Avoid dead lock.*/
+				#if 0
+				if(i==1000)
+				{
+					OSTimeDly(1);
+					i=0;
+				}		
+				i++;
+				#endif
+			}
+			printf("\x1B[96m 77777777777 \x1B[0m\n");
+			//printf("req_fw_version_RESP=%s\n",req_fw_version);
+			
+			/*Test Downlad.bin File
+						 if ((pFile = dcfOpen("\\Download.bin", "w")) == NULL)
+						 {
+						   DEBUG_DCF("!!!Error: create Download error!!!\n");
+						 
+						 }
+						 printf(">\"<\n");
+						 dcfWrite(pFile, codeAddr, idx, &writesize);
+						 
+						 dcfClose(pFile, &tmp);
+			*/
+			
+		 // 20160929 Sean Modify Parsing method.
+			body=strstr(codeAddr,"HTTP");
+			if(body[9] == '3') // 3xx redirect
+			{
+				DEBUG_P2P("HTTP 302 found, Search data.\n");
+				body=strstr(codeAddr,"\r\n\r\n")+4;
+				body=strstr(body,"\r\n\r\n")+4;
+			}
+			else if(body[9] == '4') // 4xx Error
+			{
+				DEBUG_P2P("HTTP 4xx found, Download Error.\n");
+				return -1;
+			}
+			else
+			{
+				DEBUG_P2P("Normal Download.\n");
+				body=strstr(codeAddr,"\r\n\r\n")+4;
+			}
+
+			
+			//if(idx > 1024) // Sean 20160725: Use for URL redirect solution.
+			//{
+			//	for(a=0;a<16;a++)
+			//	{
+			//		if(body[a] != 0)
+			//		{
+			//			DEBUG_P2P("NEXT SEARCH!!\n");
+			//			body=strstr(body,"\r\n\r\n")+4;
+			//			break;
+			//		}
+			//	}
+			//}					
+			//printf("addr1=%d,addr2=%d,diff=%d\n",codeAddr,body,body-codeAddr);
+			//printf("idx=%d,body=%ld,codeAddr=%ld,diff=%d\n",idx,body,codeAddr,body-codeAddr);
+			idx=idx-(body-codeAddr);
+			//DEBUG_P2P("RECV LEN: %d\n",idx);
+			strcpy(FWMD5,body);
+		}	
+		else
+		{
+			DEBUG_P2P("Connect fail!\n");
+            OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+			OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+			close(skt);
+			return -1;
+		}	
+	close(skt);	
+	//return 0;
+	}
+	else
+	{
+		DEBUG_P2P("Socket create error=%d\n",skt);
+		OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+        OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+		return -1;
+	}	
+
+
+	sysDeadLockMonitor_OFF(); /*Turn off watch dog.*/
+	strcpy(hostname,FW_SERVER);
+	
+	addr = lwip_gethostbyname(hostname);
+	printf("\x1B[96m ~~%s~~ \x1B[0m\n",ip_ntoa((ip_addr_t*)addr->h_addr_list[0]));
+    if (addr != NULL)
+    {
+        memcpy(&hostname_IP,ip_ntoa((ip_addr_t*)addr->h_addr_list[0]),sizeof(hostname_IP));
+        DEBUG_P2P("Get FW_SERVER,IP = %s\n",hostname_IP);
+	}
+	else
+	{
+		DEBUG_P2P("Parse FW_SERVER fail...\n");
+	}
+
+	memset(urlfile, 0, 100);
+	
+	//strcat(fw_version,".bin");
+	sprintf(urlfile, "%s%s/%s",FW_PATH,"170919_A1020_108_V0.10","170919_A1020_108_V0.10.bin");
+
+	DEBUG_P2P("Get2 %s\n",urlfile);
+	if(OnlineUpdateStatus != FW_UPGRADE_COMPLETE)
+		OnlineUpdateStatus=FW_DOWNLOADING;
+	else
+		OnlineUpdateStatus=FW_UPGRADE_COMPLETE;
+
+	gFWSrvAddr.sin_addr.s_addr=inet_addr(hostname_IP);
+	gFWSrvAddr.sin_port = htons(PORT_FW);
+	gFWSrvAddr.sin_family = AF_INET;
+
+	if ((skt = (int)socket(AF_INET, SOCK_STREAM, 0)) >=0)
+	{	
+		result=-1;
+		retry=0;      
+        setsockopt(skt,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on));/*Check the TCP connection whether alive.*/
+           printf("\x1B[96m 111111111 \x1B[0m\n");     
+		while(result<0)
+		{
+			result=connect(skt, (struct sockaddr *)&gFWSrvAddr, sizeof(struct sockaddr_in));
+			retry++;
+			if(result<0)
+			{
+				printf("\x1B[96m FAIL. \x1B[0m\n");
+				close(skt);
+				(skt = (int)socket(AF_INET, SOCK_STREAM, 0));
+			}
+			if(retry>10)
+			{
+				printf("\x1B[96m retry>10 \x1B[0m\n");
+				OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+				break;
+			}
+		}
+		printf("\x1B[96m 22222222222 \x1B[0m\n");
+		//if (connect(skt, (struct sockaddr *)&gFWSrvAddr, sizeof(struct sockaddr_in)) == 0)	
+		if(result==0)
+		{
+			printf("\x1B[96m 3333333333333 \x1B[0m\n");
+
+//memset(codeAddr, 0, code_size);		
+printf("\x1B[96m 444444444444 \x1B[0m\n");
+
+sprintf(codeAddr, "GET %s HTTP/1.1\r\n"
+"Host: %s\r\n"
+"Connection: keep-alive\r\n"
+"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+"Accept: text/html, application/xhtm l+xml,applicatio n/xml;q=0.9,*/*; q=0.8\r\n"
+"Accept-Encoding: gzip,deflate,sdch\r\n"
+"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n"
+"Cache-Control: no-cache\r\n"
+"\r\n",urlfile,inet_ntoa(gFWSrvAddr.sin_addr));
+			send(skt, codeAddr,strlen(codeAddr), 0);	
+			printf("\x1B[96m 555555555 \x1B[0m\n");
+			idx=0;
+			i=0;
+			memset(codeAddr, 0, 1024*1024);	
+			printf("\x1B[96m 66666666666666 \x1B[0m\n");
+
+			while(1)
+			{
+				//printf("\x1B[96m~\x1B[0m");
+				bytesRecv = recv(skt, codeAddr+idx, 0x190000, 0 );				
+				DEBUG_P2P("#%d",bytesRecv);
+				if ( bytesRecv < 0 )
+				{
+					DEBUG_P2P( "Connection Closed.\n");
+					OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+					OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+					
+					break;
+				}
+				else if(bytesRecv==0)
+				{
+					DEBUG_P2P( "Receive file finish.\n");
+					break;
+				}	
+				else 
+				{
+					idx+=bytesRecv;
+				}	 
+				/*Avoid dead lock.*/
+				#if 0
+				if(i==1000)
+				{
+					OSTimeDly(1);
+					i=0;
+				}		
+				i++;
+				#endif
+			}
+			printf("\x1B[96m 77777777777 \x1B[0m\n");
+			//printf("req_fw_version_RESP=%s\n",req_fw_version);
+			
+			/*Test Downlad.bin File
+						 if ((pFile = dcfOpen("\\Download.bin", "w")) == NULL)
+						 {
+						   DEBUG_DCF("!!!Error: create Download error!!!\n");
+						 
+						 }
+						 printf(">\"<\n");
+						 dcfWrite(pFile, codeAddr, idx, &writesize);
+						 
+						 dcfClose(pFile, &tmp);
+			*/
+			
+		 // 20160929 Sean Modify Parsing method.
+			body=strstr(codeAddr,"HTTP");
+			if(body[9] == '3') // 3xx redirect
+			{
+				DEBUG_P2P("HTTP 302 found, Search data.\n");
+				body=strstr(codeAddr,"\r\n\r\n")+4;
+				body=strstr(body,"\r\n\r\n")+4;
+			}
+			else if(body[9] == '4') // 4xx Error
+			{
+				DEBUG_P2P("HTTP 4xx found, Download Error.\n");
+				return -1;
+			}
+			else
+			{
+				DEBUG_P2P("Normal Download.\n");
+				body=strstr(codeAddr,"\r\n\r\n")+4;
+			}
+
+			
+			//if(idx > 1024) // Sean 20160725: Use for URL redirect solution.
+			//{
+			//	for(a=0;a<16;a++)
+			//	{
+			//		if(body[a] != 0)
+			//		{
+			//			DEBUG_P2P("NEXT SEARCH!!\n");
+			//			body=strstr(body,"\r\n\r\n")+4;
+			//			break;
+			//		}
+			//	}
+			//}					
+			printf("addr1=%d,addr2=%d,diff=%d\n",codeAddr,body,body-codeAddr);
+			printf("idx=%d,body=%ld,codeAddr=%ld,diff=%d\n",idx,body,codeAddr,body-codeAddr);
+			idx=idx-(body-codeAddr);
+			DEBUG_P2P("RECV LEN: %d\n",idx);
+			if (1)//(strcmp(downfile,"MD5SUM"))
+			{
+				//sysDeadLockMonitor_OFF(); /*Turn off watch dog.*/
+				OSTimeDly(1);				
+				MD5Init(&ctx);
+				MD5Update(&ctx, (unsigned char*)body,idx);
+				MD5Final(digest,&ctx);
+				for (i = 0; i < 16; i++)
+				{
+					sprintf(buf3,"%02x",digest[i]);
+					buf2[2*i]=buf3[0];
+					buf2[2*i+1]=buf3[1];
+				}
+				buf2[32]='\0';
+				DEBUG_P2P("Device\tFW MD5:%s\n",buf2);		
+				DEBUG_P2P("PC\tFW MD5:%s\n",FWMD5);		
+				if(!strncmp(FWMD5,buf2,32))
+				{
+					printf("\x1B[96m MD5 Match \x1B[0m\n");
+					OnlineUpdateStatus=FW_DOWNLOAD_FINISH;
+					memcpy(codeAddr,body,idx);
+					ispUpdateAllload_Net(idx);
+				}	
+				else
+				{
+					DEBUG_P2P("MD5 check error!!\n");
+					OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+					OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+				}
+				//sysForceWDTtoReboot();
+			}
+		}	
+		else
+		{
+			DEBUG_P2P("Connect fail!\n");
+            OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+			OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+			close(skt);
+			return -1;
+		}	
+	close(skt);	
+	return 0;
+	}
+	else
+	{
+		DEBUG_P2P("Socket create error=%d\n",skt);
+		OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+        OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+		return -1;
+	}	
+	#endif
+
+	
+}
+/*Check firmware version on the http server.*/
+#if 1
+u8 Check_fw_ver_net(u8 connected)
+{
+	//char urlfile[100];
+	//int skt;
+	//int bytesRecv;
+	//s32 idx;
+	char ver[1024];
+	char ver2[1024];
+	//u8 ver_len;
+	//int result;
+	//int retry;
+	
+	if(net_link_status==NET_LINK_OFF)
+	{
+		//ver=0;
+		Reminder_FW_Upgrade=0;
+		return Reminder_FW_Upgrade;
+	}	
+	if(connected)
+	{		
+
+		do
+		{
+			check_fw(ver);
+			check_fw(ver2);	
+			if((ver == 0) && (ver2 == 0))
+				break;
+		}while(strcmp(ver,ver2));
+		//}while((strcmp(ver,ver2))&&(net_link_status==NET_LINK_ON));
+
+		if(ver==0)
+		{
+			DEBUG_P2P("FW server connection fail!\n");
+			Reminder_FW_Upgrade=0;
+		}	
+		//else if((strcmp(uiVersion,ver))&&(strcmp(uiVersion,ver2)))	
+		else if((atoi(uiVersionTime)<atoi(ver))&&(atoi(uiVersionTime)<atoi(ver2)))
+		{
+			DEBUG_P2P("New firmware %s has released.\n",fw_version);
+			//strcpy(fw_version,fw_ver);
+			//printf("fw_version=%s\n",fw_version);
+			/*Show Upgrade f/w tips.*/
+#if ((UI_VERSION == UI_VERSION_RDI) ||(UI_VERSION == UI_VERSION_RDI_2) ||\
+			(UI_VERSION == UI_VERSION_RDI_3) || (UI_FW_UPGRADE_ICON_ENABLE == 1))
+				uiOsdDrawRemindDownload(UI_OSD_DRAW);
+#endif
+			Reminder_FW_Upgrade=1;
+
+		}
+		else
+		{
+			DEBUG_P2P("Current firmware is latest.\n");
+			Reminder_FW_Upgrade=0;
+		}	
+		return !Reminder_FW_Upgrade;
+	}
+	return !Reminder_FW_Upgrade;
+}
+#endif
+/*Fetch file from HTTP server*/
+static void GetFile(char *downfile)
+{
+	char urlfile[100];
+	int skt;
+	unsigned char digest[16];
+	MD5_CTX ctx;
+	int bytesRecv;
+	int i;
+	s32 idx;
+	char buf2[50];
+	char buf3[2];
+	u8* body;
+	u8  err;
+	int result;
+	u8 retry;
+    //int ret;
+    int on=1;
+	char    hostname_IP[50]="";
+	char hostname[50]; 
+	int a;
+	/* Test Downlad.bin File
+	u8 tmp;
+	u32 writesize; 
+	FS_FILE* pFile;	
+	*/
+	struct hostent *addr;
+	
+ 	u8* codeAddr = PNBuf_sub1[0];
+    
+	sysDeadLockMonitor_OFF(); /*Turn off watch dog.*/
+	strcpy(hostname,FW_SERVER);
+	
+	addr = lwip_gethostbyname(hostname);
+	printf("\x1B[96m %s \x1B[0m\n",ip_ntoa((ip_addr_t*)addr->h_addr_list[0]));
+    if (addr != NULL)
+    {
+        memcpy(&hostname_IP,ip_ntoa((ip_addr_t*)addr->h_addr_list[0]),sizeof(hostname_IP));
+        DEBUG_P2P("Get FW_SERVER,IP = %s\n",hostname_IP);
+	}
+	else
+	{
+		DEBUG_P2P("Parse FW_SERVER fail...\n");
+	}
+
+	memset(urlfile, 0, 100);
+	sprintf(urlfile, "%s%s/%s",FW_PATH,fw_version,downfile);
+
+	DEBUG_P2P("Get %s\n",urlfile);
+	if(OnlineUpdateStatus != FW_UPGRADE_COMPLETE)
+		OnlineUpdateStatus=FW_DOWNLOADING;
+	else
+		OnlineUpdateStatus=FW_UPGRADE_COMPLETE;
+
+	gFWSrvAddr.sin_addr.s_addr=inet_addr(hostname_IP);
+	gFWSrvAddr.sin_port = htons(PORT_FW);
+	gFWSrvAddr.sin_family = AF_INET;
+
+	if ((skt = (int)socket(AF_INET, SOCK_STREAM, 0)) >=0)
+	{	
+		result=-1;
+		retry=0;      
+        setsockopt(skt,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on));/*Check the TCP connection whether alive.*/
+           printf("\x1B[96m 111111111 \x1B[0m\n");     
+		while(result<0)
+		{
+			result=connect(skt, (struct sockaddr *)&gFWSrvAddr, sizeof(struct sockaddr_in));
+			retry++;
+			if(result<0)
+			{
+				printf("\x1B[96m FAIL. \x1B[0m\n");
+				close(skt);
+				(skt = (int)socket(AF_INET, SOCK_STREAM, 0));
+			}
+			if(retry>10)
+			{
+				printf("\x1B[96m retry>10 \x1B[0m\n");
+				OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+				break;
+			}
+		}
+		printf("\x1B[96m 22222222222 \x1B[0m\n");
+		//if (connect(skt, (struct sockaddr *)&gFWSrvAddr, sizeof(struct sockaddr_in)) == 0)	
+		if(result==0)
+		{
+			printf("\x1B[96m 3333333333333 \x1B[0m\n");
+
+//memset(codeAddr, 0, code_size);		
+printf("\x1B[96m 444444444444 \x1B[0m\n");
+
+sprintf(codeAddr, "GET %s HTTP/1.1\r\n"
+"Host: %s\r\n"
+"Connection: keep-alive\r\n"
+"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.5 (KHTML,like Gecko) Chrome/19.0.1084.52 Safari/536.5\r\n"
+"Accept: text/html, application/xhtm l+xml,applicatio n/xml;q=0.9,*/*; q=0.8\r\n"
+"Accept-Encoding: gzip,deflate,sdch\r\n"
+"Accept-Language: zh-TW,zh;q=0.8,en-US;q=0.6,en;q=0.4\r\n"
+"Accept-Charset: Big5,utf-8;q=0.7,*;q=0.3\r\n"
+"Cache-Control: no-cache\r\n"
+"\r\n",urlfile,inet_ntoa(gFWSrvAddr.sin_addr));
+			send(skt, codeAddr,strlen(codeAddr), 0);	
+			printf("\x1B[96m 555555555 \x1B[0m\n");
+			idx=0;
+			i=0;
+			memset(codeAddr, 0, 1638400);	
+			printf("\x1B[96m 66666666666666 \x1B[0m\n");
+
+			while(1)
+			{
+				printf("\x1B[96m~\x1B[0m");
+				bytesRecv = recv(skt, codeAddr+idx, 1460, 0 );				
+				DEBUG_P2P("#%d",bytesRecv);
+				if ( bytesRecv < 0 )
+				{
+					DEBUG_P2P( "Connection Closed.\n");
+					OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+					OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+					
+					break;
+				}
+				else if(bytesRecv==0)
+				{
+					DEBUG_P2P( "Receive file finish.\n");
+					break;
+				}	
+				else 
+				{
+					idx+=bytesRecv;
+				}	 
+				/*Avoid dead lock.*/
+				#if 0
+				if(i==1000)
+				{
+					OSTimeDly(1);
+					i=0;
+				}		
+				i++;
+				#endif
+			}
+			printf("\x1B[96m 77777777777 \x1B[0m\n");
+			//printf("req_fw_version_RESP=%s\n",req_fw_version);
+			
+			/*Test Downlad.bin File
+						 if ((pFile = dcfOpen("\\Download.bin", "w")) == NULL)
+						 {
+						   DEBUG_DCF("!!!Error: create Download error!!!\n");
+						 
+						 }
+						 printf(">\"<\n");
+						 dcfWrite(pFile, codeAddr, idx, &writesize);
+						 
+						 dcfClose(pFile, &tmp);
+			*/
+			
+		 // 20160929 Sean Modify Parsing method.
+			body=strstr(codeAddr,"HTTP");
+			if(body[9] == '3') // 3xx redirect
+			{
+				DEBUG_P2P("HTTP 302 found, Search data.\n");
+				body=strstr(codeAddr,"\r\n\r\n")+4;
+				body=strstr(body,"\r\n\r\n")+4;
+			}
+			else if(body[9] == '4') // 4xx Error
+			{
+				DEBUG_P2P("HTTP 4xx found, Download Error.\n");
+				return -1;
+			}
+			else
+			{
+				DEBUG_P2P("Normal Download.\n");
+				body=strstr(codeAddr,"\r\n\r\n")+4;
+			}
+
+			
+			//if(idx > 1024) // Sean 20160725: Use for URL redirect solution.
+			//{
+			//	for(a=0;a<16;a++)
+			//	{
+			//		if(body[a] != 0)
+			//		{
+			//			DEBUG_P2P("NEXT SEARCH!!\n");
+			//			body=strstr(body,"\r\n\r\n")+4;
+			//			break;
+			//		}
+			//	}
+			//}					
+			//printf("addr1=%d,addr2=%d,diff=%d\n",codeAddr,body,body-codeAddr);
+			//printf("idx=%d,body=%ld,codeAddr=%ld,diff=%d\n",idx,body,codeAddr,body-codeAddr);
+			idx=idx-(body-codeAddr);
+			//DEBUG_P2P("RECV LEN: %d\n",idx);
+			if(strcmp(downfile,"MD5SUM"))
+			{
+				//sysDeadLockMonitor_OFF(); /*Turn off watch dog.*/
+				OSTimeDly(1);				
+				MD5Init(&ctx);
+				MD5Update(&ctx, (unsigned char*)body,idx);
+				MD5Final(digest,&ctx);
+				for (i = 0; i < 16; i++)
+				{
+					sprintf(buf3,"%02x",digest[i]);
+					buf2[2*i]=buf3[0];
+					buf2[2*i+1]=buf3[1];
+				}
+				buf2[32]='\0';
+				DEBUG_P2P("FW MD5:%s\n",buf2);		
+				
+				if(!strncmp(FWMD5,buf2,32))
+				{
+					OnlineUpdateStatus=FW_DOWNLOAD_FINISH;
+					memcpy(codeAddr,body,idx);
+					ispUpdateAllload_Net(idx);
+				}	
+				else
+				{
+					DEBUG_P2P("MD5 check error!!\n");
+					OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+					OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+				}
+				DEBUG_P2P("Rebooting...\n");
+				sysForceWDTtoReboot();
+				}
+			else
+			{	
+				strcpy(FWMD5,body);
+			}	
+			}	
+		else
+		{
+			DEBUG_P2P("Connect fail!\n");
+            OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+			OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+			close(skt);
+			return -1;
+		}	
+	close(skt);	
+	return 0;
+	}
+	else
+	{
+		DEBUG_P2P("Socket create error=%d\n",skt);
+		OnlineUpdateStatus=FW_DOWNLOAD_FAIL;
+        OSFlagPost(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_UPDATE_SEC, OS_FLAG_SET, &err);
+		return -1;
+	}	
+}
+
+/*Return the progress of f/w downloading*/
+u8 GetFWDownProgress(s32* fw_length)
+{
+	*fw_length=idx;
+	return OnlineUpdateStatus;
+}
+
+int AuthCallBackFn(char *viewAcc,char *viewPwd)
+
+{
+    char PW[32];
+	strcpy(PW,viewPwd);
+	//DEBUG_P2P("APP_PW[%s]\n",PW);
+
+	if(strcmp(viewAcc, "admin") == 0 && strcmp(viewPwd,gP2PPassword) == 0)
+	  return 1;
+	return 0;
+}
+
+void UpdateHeader(int ch,int UseMpeg_Q)
+{
+    int Width,Height;
+	if(ch < 4)
+	{
+		if(P2P_AV_Source[ch] == Local_record)
+        {
+		    Width = mpeg4Width;
+		    Height = mpeg4Height;
+            
+        }      
+		else
+        {
+    		Width  = gRfiuUnitCntl[ch].TX_PicWidth;
+		    Height = gRfiuUnitCntl[ch].TX_PicHeight;
+        }
+	}
+	else//Local playck
+	{
+		Width = gPlaybackWidth;
+		Height= gPlaybackHeight;
+		//DEBUG_P2P("Play File RES= %d x %d\n",Width,Height);
+	}
+    MPEG4_config[0x17] &= 0xF0; 
+    MPEG4_config[0x18] &= 0x00;
+    MPEG4_config[0x19] &= 0x7F;
+    MPEG4_config[0x19] &= 0xC0;
+    MPEG4_config[0x1A] &= 0x01;   
+        
+    MPEG4_config[0x17] |= (unsigned char)(Width >> 9); 
+    MPEG4_config[0x18] |= (unsigned char)(Width >> 1);     
+    MPEG4_config[0x19] |= (unsigned char)(Width << 7);     
+    MPEG4_config[0x19] |= (unsigned char)(Height >> 7);
+    MPEG4_config[0x1A] |= (unsigned char)(Height << 1);
+
+    if(UseMpeg_Q)
+    {
+       MPEG4_config[0x1b]=0x49;
+       MPEG4_config[0x1c]=0x0f;  
+    }
+    else
+    {
+       MPEG4_config[0x1b]=0x44;
+       MPEG4_config[0x1c]=0x3f;  
+    }
+
+    
+}
+
+void regedit_client_to_video(int SID)
+{
+	gClientInfo[SID].bEnableVideo = 1;
+}
+
+void unregedit_client_from_video(int SID)
+{
+	gClientInfo[SID].bEnableVideo = 0;
+}
+
+void regedit_client_to_audio(int SID)
+{
+	gClientInfo[SID].bEnableAudio = 1;
+}
+
+void unregedit_client_from_audio(int SID)
+{
+	gClientInfo[SID].bEnableAudio = 0;
+}
+
+void regedit_client_to_avsession(int SID, int avIndex)
+{
+	gClientInfo[SID].avChannel = avIndex;
+}
+
+void regedit_client_to_speaker(int SID, int avIndex)
+{
+	gClientInfo[SID].bEnableSpeaker = 1;
+	gClientInfo[SID].speakerAvIndex = avIndex;
+}
+
+void unregedit_client_from_speaker(int SID)
+{
+	gClientInfo[SID].bEnableSpeaker = 0;
+}
+
+void unregedit_client_from_avsession(int SID)
+{    
+	int i;
+	
+	for(i=0;i<MAX_AV_CH;i++)
+	{
+		DEBUG_P2P("avServStop called SID[%d] avIndex[%d]\n", SID, gClientInfo[SID].avIndex[i]);
+		avServStop(gClientInfo[SID].avIndex[i]);
+		gClientInfo[SID].avIndex[i] = -1;
+	}
+	if((gClientInfo[SID].playBackCh!=0)&&((search_dir_start.YMD>0)||(search_dir_start.HMS>0)))
+	{
+		DEBUG_P2P("avServStop called SID[%d] avChannel[%d]\n",SID,gClientInfo[SID].avChannel);
+		avServStop(gClientInfo[SID].avChannel);
+		search_dir_start.YMD=0;
+		search_dir_start.HMS=0;
+		search_dir_end.YMD=0;
+		search_dir_end.HMS=0;
+	}
+	gClientInfo[SID].avChannel= -1;
+	unregedit_client_from_video(SID);
+	unregedit_client_from_audio(SID);
+	unregedit_client_from_speaker(SID);
+}
+
+void LoadP2PPassword(char *password)
+{
+	strcpy(gP2PPassword,password);
+}
+
+/*關閉語音APP to 8200 by aher*/
+void Kill_Task_Speaker(int SID)
+{
+	if(gClientInfo[SID].bEnableSpeaker)
+	{
+		unregedit_client_from_speaker(SID);
+		OSTimeDly(1);
+    #if (REMOTE_TALK_BACK == 0)
+		rfiu_AudioRetONOFF_APP(0,CurrentCH);
+    #endif
+		gSpeakerSID=-1;
+		OSTimeDly(4);
+		gFlagSpeakerOK = 0;
+		avClientStop(SpeakerAvIndex);
+        DEBUG_P2P("====Kill_Task_Speaker:%d====\n",CurrentCH);
+		//OSTaskSuspend(SPEAKER_TASK_PRIORITY);
+    #if REMOTE_TALK_BACK
+        iisPreviewI2OEnd();
+    #endif
+		//OSTimeDly(3);
+		OSTaskDel(SPEAKER_TASK_PRIORITY);
+	}	
+}
+
+/*
+開啟語音APP to 8200 by aher.
+*/
+
+u16 Lost_Rate(u32 recvCnt, u32 totalCnt)
+{
+	return (totalCnt - recvCnt) * 10000 / totalCnt;
+}
+
+void Task_Speaker(void *pdata)
+{
+	int SID = gSpeakerSID;
+	int ret =0;
+	FRAMEINFO_t frameInfo;
+	unsigned int pnFrameIdx;
+	unsigned long servType;
+	AV_Client *p = &gClientInfo[SID];
+	int TotalSize=0;
+	u32 iRecvCnt = 0, bufferCnt;
+	int i=0;
+    int CH;
+	u16 lost_rate;
+    //==============================//
+ 	pnFrameIdx=0;
+    CH=(int)pdata;
+	iCommAudioRetWrite_idx=0; //Fixed delay 5 sec issue, Paul, 180529
+	iCommAudioRetPlay_idx=0;
+	DEBUG_P2P("===Task_Speaker[SID %d] Create:%d:pCh-%d===\n",SID ,CH, p->speakerCh);
+	SpeakerAvIndex = avClientStart(SID, NULL, NULL, 20, &servType, p->speakerCh); // password no need	
+    if(SpeakerAvIndex == AV_ER_INVALID_ARG)
+    {
+        char *ac="";
+        char *pw="";
+    	SpeakerAvIndex = avClientStart(SID, ac, pw, 20, &servType, p->speakerCh); // password no need	
+    	printf("SpeakerAvInde AV_ER_INVALID_ARG\n");
+    }
+    printf("SpeakerAvIndex=%d\n",SpeakerAvIndex);
+	if(SpeakerAvIndex >= 0)
+	{
+		while(1)
+		{
+			if (gClientInfo[SID].bEnableSpeaker<1)
+			{
+				OSTimeDly(3);
+				DEBUG_P2P("Closing Speaker Task.\n");
+				printf("TUTKFrameIdx = %d, TUTKRecvCnt= %d, lost rate= %d.%d%%\n",pnFrameIdx, iRecvCnt,
+							Lost_Rate(iRecvCnt, pnFrameIdx) /100, Lost_Rate(iRecvCnt, pnFrameIdx) %100);
+				continue;
+			}
+			gFlagSpeakerOK = 1;
+			bufferCnt = avCheckAudioBuf(SpeakerAvIndex);
+			if(bufferCnt > gAuAdjust)
+			{
+				for(i=0;i<gAuCnt;i++)
+				{
+                    ret = avRecvAudioData(SpeakerAvIndex ,iCommAudioRetBuf[0]+TotalSize, BUFF_FOR_AUDIO, (char*)&frameInfo, 16,&pnFrameIdx);
+                    //memcpy(rfiuAudioRetDMANextBuf[0]+TotalSize,rfiuAudioZeroBuf,1024);
+                    if(gLogOn) DEBUG_P2P("\nSpeaker %d:%d:%d\n",pnFrameIdx, iRecvCnt, bufferCnt);
+					if (ret<0)
+						DEBUG_P2P("AU FAIL:%d:%d:%d\n",ret, iRecvCnt, bufferCnt);
+					else	
+					{
+						iRecvCnt++;
+						TotalSize+=ret;
+
+						if(TotalSize>=(1024*(iCommAudioRetWrite_idx+1)))
+						{
+							//iCommAudioRetRec_idx=(rfiuAudioRetRec_idx+1)%RFI_AUDIO_RET_BUF_NUM;	
+							iCommAudioRetWrite_idx=(iCommAudioRetWrite_idx+1)%RFI_AUDIO_RET_BUF_NUM;
+                            if(iCommAudioRetWrite_idx == 0)
+                            {
+                               TotalSize=0;
+                            }
+						}	
+					}
+				}
+			}					
+			else
+			{
+				OSTimeDly(1);		
+		}
+	}
+	}
+	else	
+	{
+		DEBUG_P2P("Task_Speaker avClientStart fail :%d\n ",SpeakerAvIndex);
+		while(1)
+		{
+			OSTimeDly(3);
+		}
+	}
+		
+}
+
+void client_p2pconnected(int SID)
+{
+	int i;
+	gClientInfo[SID].bP2PConnected = 1;
+	gClientInfo[SID].bShowInfo = 1;
+    gClientInfo[SID].VOLSend= 0;
+	for(i=0;i<MAX_AV_CH;i++)
+		gClientInfo[SID].avIndex[i]=-1;		
+	gOnlineNum++;
+}
+
+void client_p2pdisconnected(int SID)
+{
+	DEBUG_P2P("P2P Client was disconnected.\n");
+	gClientInfo[SID].bP2PConnected = 0;
+	//aher 20130801
+	gClientInfo[SID].getsupportstream=0;
+	gOnlineNum--;
+	DEBUG_P2P("unregedit_client_from_avsession(SID)=%d\n",SID);
+	unregedit_client_from_avsession(SID);
+	unregedit_client_from_speaker(SID);
+	DEBUG_P2P("IOTC_Session_Close(SID)=%d\n",SID);
+	IOTC_Session_Close(SID);
+}
+
+extern u8 uiCaptureVideo(void);
+
+void Init_P2P_Session(void)
+{
+    int i;
+    
+    for(i=0; i<MAX_AV_CH; i++)
+    {
+        P2PVideoCmpSemEvt[i]   = OSSemCreate(0);    
+        P2PAudioCmpSemEvt[i]   = OSSemCreate(0);            
+    }
+}
+
+void Start_P2P_Session(int ch, int source)
+{
+          
+	/**************************************
+    **** Streaming Audio/Video Payload ****
+    **************************************/
+    unsigned int    cpu_sr = 0;  
+
+	printf("P2PEnableStreaming[%d]: %d\n",ch,(P2PEnableStreaming[ch]));
+
+    P2P_AV_Source[ch]   = source;
+    if(P2PEnableStreaming[ch] == 0)
+    {
+        DEBUG_P2P("CH %d, start streaming Audio/Video Payload\n",ch);
+        if(source == Local_record)
+        {
+
+	        OS_ENTER_CRITICAL();
+		    P2PVideoBufReadIdx[ch]  = (VideoBufMngWriteIdx) % VIDEO_BUF_NUM;
+		    P2PVideoPresentTime[ch] = 0;
+			
+	    	P2PAudioBufReadIdx[ch]  = (iisSounBufMngWriteIdx) % IIS_BUF_NUM;
+	    	P2PAudioPresentTime[ch] = 0;
+	        P2PChannelStart[ch]     = 1;
+
+	        P2PVideoBuf[ch]         = VideoBufMng;
+	        P2PAudioBuf[ch]         = iisSounBufMng; 
+            Link_AV[ch]             = 0;
+	        OS_EXIT_CRITICAL();
+        }
+    }
+
+    P2PEnableStreaming[ch]  += 1; 
+    
+}
+
+void Stop_P2P_Session(int ch)
+{
+    u8 err;
+    
+    DEBUG_P2P("(SID, CH) = (%d, %d), Stop P2P Session \n\n", (ch/MAX_AV_CH), (ch%MAX_AV_CH));
+
+    P2PEnableStreaming[ch]  -= 1; 
+    if(P2PEnableStreaming[ch] <= 0)
+    {
+        DEBUG_P2P("CH %d, stop streaming Audio/Video Payload\n",ch);
+        OSSemSet(P2PVideoCmpSemEvt[ch], 0, &err);
+        OSSemSet(P2PAudioCmpSemEvt[ch], 0, &err);                
+		P2PEnableStreaming[ch]=0;
+    }
+}
+void Reset_P2P_Session(void)
+{
+    int i;
+    u8 err;
+    
+    for(i=0; i<MAX_AV_CH; i++)
+    {
+        OSSemSet(P2PVideoCmpSemEvt[i], 0, &err);
+        OSSemSet(P2PAudioCmpSemEvt[i], 0, &err);                
+    }
+}
+
+// ----------------------
+// 以下為主動 Update APP Sensor 設置 20150929 Sean
+// ----------------------
+#if HOME_RF_SUPPORT
+
+void UpdateAPPSensorListStatus(void)
+{
+    APPSensorListStatus = 1;
+}
+
+void UpdateAPPSensorStatus(u8 sID)
+{
+    APPSensorStatus = sID;
+}
+
+void UpdateAPPRoomListStatus(void)
+{
+    APPRoomListStatus = 1;
+}
+
+void UpdateAPPSceneListStatus(void)
+{
+    APPSceneListStatus = 1;
+}
+
+#endif
+
+void Handle_IOCTRL_Cmd(int SID, int avIndex, char *buf)
+{
+    //static unsigned int room_id_add =0;
+    //static unsigned int sensor_id_add =0;
+    //static unsigned int scene_id_add =0;
+    unsigned int i;
+	unsigned int ioType;
+    int ret;
+	int PTZ_CHN;
+    static u8 same_err = 0;
+#if UI_LIGHT_SUPPORT
+	int Light_CHN;
+
+// ----------------------
+// 以下為主動 Update APP Light 設置 20151126 Sean
+// ----------------------
+    if (AppLightStatus != 0)
+    {
+        int size =  sizeof(SMsgAVIoctrlGetLightStatusResp);        
+        
+        SMsgAVIoctrlGetLightStatusResp q;
+
+        q.channel = AppLightStatus-1;
+     
+        if((iconflag[UI_MENU_SETIDX_CH1_LS_STATUS + AppLightStatus-1])<2)
+            q.status = 0;
+        else
+            q.status = 1;
+            
+        AppLightStatus = 0;
+        
+        for(i=0; i<MAX_CLIENT; i++)
+        {
+            if((ret = Check_Session_Status(i)) < 0) //session disconnected
+                continue;
+            if(avSendIOCtrl(gClientInfo[i].avIndex[0], IOTYPE_RDI_GETLIGHTSTATUS_RESP, (char *)&q, size)== AV_ER_NoERROR)
+                DEBUG_P2P("IOTYPE_RDI_GETLIGHTSTATUS_RESP_2 OK\n\n");
+        }
+    }
+#endif
+
+#if HOME_RF_SUPPORT
+//////////////////////////////////////////
+// ----------------------
+// 以下為主動 Update APP Status 設置 20151230 Sean
+// ----------------------
+if (APPSensorListStatus != 0)
+{
+    int size =  sizeof(SMsgAVIoctrlGetSensorLstResp);
+    int i, j, ret;
+    
+    SMsgAVIoctrlGetSensorLstResp q;
+
+    sysAppGetSensorList(&q,0);
+    APPSensorListStatus = 0;
+    
+    for(i=0; i<MAX_CLIENT; i++)
+    {
+        if((ret = Check_Session_Status(i)) < 0) //session disconnected
+            continue;   
+        if(avSendIOCtrl(gClientInfo[i].avIndex[0], IOTYPE_USER_GETSENSORLST_RESP, (char*)&q, size)== AV_ER_NoERROR)
+        {
+            DEBUG_P2P("IOTYPE_GETSENSORLST_RESP2 OK\n\n");
+        }
+        if(q.nTotalCount > MAXSENSOR_NUM_ONCE)
+            for(j = 0; j < (q.nTotalCount)/(MAXSENSOR_NUM_ONCE+1); i++)
+            {
+                sysAppGetSensorList(&q,j+1);
+                if(avSendIOCtrl(gClientInfo[i].avIndex[0], IOTYPE_USER_GETSENSORLST_RESP, (char*)&q, size)== AV_ER_NoERROR)
+                    DEBUG_P2P("IOTYPE_GETSENSORLST_RESP2_%d OK\n\n",j+2);
+            }   
+    }
+}
+
+if (APPSensorStatus != 0)
+{
+    int size =  sizeof(SMsgAVIoctrlGetSensorResp);
+    int i, ret;
+    
+    SMsgAVIoctrlGetSensorResp q;  
+
+    sysAppGetSensor(APPSensorStatus,&q);
+    APPSensorStatus = 0;
+
+    for(i=0; i<MAX_CLIENT; i++)
+    {
+        if((ret = Check_Session_Status(i)) < 0) //session disconnected
+            continue;
+        if(avSendIOCtrl(gClientInfo[i].avIndex[0], IOTYPE_USER_GETSENSOR_RESP, (char*)&q, size)== AV_ER_NoERROR)
+        {
+            DEBUG_P2P("IOTYPE_GETSENSOR_RESP2 OK\n\n");
+        }
+    }
+}
+
+if (APPRoomListStatus != 0)
+{
+    int size =  sizeof(SMsgAVIoctrlGetRoomLstResp);
+    int i, j, ret;
+    
+    SMsgAVIoctrlGetRoomLstResp q;
+
+    sysAppGetRoomList(&q,0);
+    APPRoomListStatus = 0;
+
+    DEBUG_P2P("\nGET ROOM : %d, %d, %d \n",q.nCount,q.nStartIdx,q.nTotalCount);
+
+    for(i=0; i<MAX_CLIENT; i++)
+    {
+        if((ret = Check_Session_Status(i)) < 0) //session disconnected
+            continue;       
+        if(avSendIOCtrl(gClientInfo[i].avIndex[0], IOTYPE_USER_GETROOMLST_RESP, (char*)&q, size)== AV_ER_NoERROR)
+        {
+            DEBUG_P2P("IOTYPE_GETROOMLST_RESP2 OK\n\n");
+        }
+        if(q.nTotalCount > MAXROOM_NUM_ONCE)
+            for(j = 0; j < (q.nTotalCount)/(MAXROOM_NUM_ONCE+1); j++)
+            {
+                sysAppGetRoomList(&q,j+1);           
+                if(avSendIOCtrl(gClientInfo[i].avIndex[0], IOTYPE_USER_GETROOMLST_RESP, (char*)&q, size)== AV_ER_NoERROR)
+                    DEBUG_P2P("IOTYPE_GETROOMLST_RESP2_%d OK\n\n",j+2);
+            }  
+    }
+}
+
+if (APPSceneListStatus != 0)
+{
+    int size =  sizeof(SMsgAVIoctrlGetSceneLstResp);
+    int i, j, ret;
+    
+    SMsgAVIoctrlGetSceneLstResp q;
+
+    sysAppGetSceneList(&q,0);
+    APPSceneListStatus = 0;
+
+    for(i=0; i<MAX_CLIENT; i++)
+    {
+        if((ret = Check_Session_Status(i)) < 0) //session disconnected
+            continue;   
+        if(avSendIOCtrl(gClientInfo[i].avIndex[0], IOTYPE_USER_GETSCENCELST_RESP, (char*)&q, size)== AV_ER_NoERROR)
+        {
+        DEBUG_P2P("IOTYPE_GETSCENCELST_RESP2 OK\n\n");
+        }
+        if(q.nTotalCount > MAXSCENE_NUM_ONCE)
+            for(j = 0; j < (q.nTotalCount)/(MAXSCENE_NUM_ONCE+1); j++)
+            {
+                sysAppGetSceneList(&q,j+1);
+                if(avSendIOCtrl(gClientInfo[i].avIndex[0], IOTYPE_USER_GETSCENCELST_RESP, (char*)&q, size)== AV_ER_NoERROR)
+                    DEBUG_P2P("IOTYPE_GETSCENCELST_RESP2_%d OK\n\n",j+2);
+            }  
+    }
+}
+//////////////////////////////////////////
+#endif
+	ret = avRecvIOCtrl(avIndex, &ioType, (char *)buf, MAX_BUF_SIZE, 0); 
+
+	if(avIndex<0)
+	{
+		return;
+	}
+	
+	if(ret < 0)
+	{
+	    if(ret==(AV_ER_INVALID_SID||AV_ER_SESSION_CLOSE_BY_REMOTE||AV_ER_REMOTE_TIMEOUT_DISCONNECT))
+            ClearP2PConnection();
+        if(ret != AV_ER_DATA_NOREADY) 	
+		    DEBUG_P2P("Handle IOCTL CMD fail ret[%d] avIndex[%d]\n", ret, avIndex);
+	    //unregedit_client_from_avsession(SID);
+		return;
+        
+	}
+	switch(ioType)
+	{
+
+#if APP_KEEP_ALIVE
+/*===============================KEEP ALIVE==================================*/
+		case IOTYPE_USER_IPCAM_KEEPALIVE_REQ:
+		{
+			DEBUG_P2P("IOTYPE_IPCAM_KEEPALIVE_REQ:%d OK \n",SID);
+			gFlagKeepAlive[SID] = 1;
+			switch(SID)
+			{
+				case 0:
+					RTC_Get_Time(&gKeepAliveTime0);
+					break;
+				case 1:
+					RTC_Get_Time(&gKeepAliveTime1);
+					break;
+				case 2:
+					RTC_Get_Time(&gKeepAliveTime2);
+					break;
+				case 3:
+					RTC_Get_Time(&gKeepAliveTime3);
+					break;
+				default:
+					break;
+			}
+		}
+		break;
+/*===============================KEEP ALIVE==================================*/
+#endif
+
+
+	case IOTYPE_USER_IPCAM_GET_FWCHECK_REQ:
+	{	
+		SMsgAVIoctrlGetFWCheckResp	*q= (SMsgAVIoctrlGetFWCheckResp*)buf;
+		int size=sizeof(SMsgAVIoctrlGetFWCheckResp);
+
+		DEBUG_P2P("IOTYPE_USER_IPCAM_GET_FWCHECK_REQ OK \n\n");
+		q->result = Check_fw_ver_net(1);
+
+		if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_GET_FWCHECK_RESP, (char *)q, size) == AV_ER_NoERROR)
+		{
+			DEBUG_P2P("IOTYPE_USER_IPCAM_GET_FWCHECK_RESP OK \n\n");
+		}
+
+	}
+	break;
+
+
+	case IOTYPE_USER_IPCAM_SET_FWUPDATE_REQ:
+	{		  
+		SMsgAVIoctrlSetFWUpdateResp	*q= (SMsgAVIoctrlSetFWUpdateResp*)buf;
+		int size=sizeof(SMsgAVIoctrlSetFWUpdateResp);
+		DEBUG_P2P("IOTYPE_USER_IPCAM_SET_FWUPDATE_REQ OK \n\n");
+
+		Set_UpgradeServer();
+		q->result = 0;
+		
+		if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_SET_FWUPDATE_RESP, (char *)q, size) == AV_ER_NoERROR)
+		{
+			DEBUG_P2P("IOTYPE_USER_IPCAM_SET_FWUPDATE_RESP OK \n\n");
+		}
+	}
+	break;
+
+
+
+
+
+
+
+
+/********************************************
+  rfiu_TX_P2pVideoQuality
+
+  RFWIFI_P2P_QUALITY_HIGH	 0
+  RFWIFI_P2P_QUALITY_MEDI	 1
+  RFWIFI_P2P_QUALITY_LOW 	 2
+********************************************/
+
+	    case IOTYPE_USER_IPCAM_START:
+		{         
+			if(rfiu_TX_P2pVideoQuality > 2)
+				rfiu_TX_P2pVideoQuality = 1;
+			sysTX8211_EnterWifi(rfiu_TX_P2pVideoQuality);	//Sean: 20170816 Need sysbackTask?
+
+			DEBUG_P2P("IOTYPE_IPCAM_START[%d:%d]\n", SID, avIndex);            
+			regedit_client_to_avsession(SID, avIndex);                
+			regedit_client_to_video(SID);
+			gClientInfo[SID].VOLSend=0;  
+
+			Start_P2P_Session(0, Local_record);	//Sean: 20170802 Only one CH.
+		}
+
+		break;
+		case IOTYPE_USER_IPCAM_STOP:
+		{
+			if(gOnlineNum<=1)
+				sysTX8211_LeaveWifi(0);	//Sean: 20170816 Need sysbackTask?
+			
+			SMsgAVIoctrlAVStream *p = (SMsgAVIoctrlAVStream *)buf;
+			DEBUG_P2P("IOTYPE_IPCAM_STOP[%d:%d]\n", p->channel, avIndex);
+			if(gOnlineNum<=0)
+			{
+				gOnlineNum=0;
+				gFirstConnect=0;
+			}	
+
+			unregedit_client_from_video(SID);
+
+			if(gClientInfo[SID].avIndex[0] == gClientInfo[SID].avChannel)
+				Stop_P2P_Session(gClientInfo[SID].avChannel);	//Sean: 20170816 modify.
+		}
+		break;
+		case IOTYPE_USER_IPCAM_AUDIOSTART:
+		{
+			if(gClientInfo[SID].playBackCh==0)
+			{          
+				SMsgAVIoctrlAVStream *p = (SMsgAVIoctrlAVStream *)buf;
+				DEBUG_P2P("IOTYPE_IPCAM_AUDIOSTART[%d:%d]\n", p->channel, avIndex);
+				regedit_client_to_audio(SID);
+				if(gClientInfo[SID].bEnableSpeaker>0)
+					Kill_Task_Speaker(SID);			
+			}
+		}
+		break;
+		case IOTYPE_USER_IPCAM_AUDIOSTOP:
+		{
+			if(gClientInfo[SID].playBackCh==0)
+			{          
+				SMsgAVIoctrlAVStream *p = (SMsgAVIoctrlAVStream *)buf;
+				DEBUG_P2P("IOTYPE_IPCAM_AUDIOSTOP[%d:%d]\n", p->channel, avIndex);
+				unregedit_client_from_audio(SID);
+			}
+		}
+		break;
+
+        case IOTYPE_USER_IPCAM_GETSUPPORTSTREAM_REQ:
+		{
+            unsigned short i;    
+            //int index;
+			int size = sizeof(int) + (sizeof(SStreamDef)*MAX_AV_CH);
+            int ret;
+			//int nResend;
+
+			SMsgAVIoctrlGetSupportStreamResp *p = (SMsgAVIoctrlGetSupportStreamResp *)buf;
+            DEBUG_P2P("IOTYPE_IPCAM_GETSUPPORTSTREAM_REQ \n\n");
+
+			//ahre 20130801
+			if(gClientInfo[SID].getsupportstream==1)
+				return;
+			
+			gClientInfo[SID].getsupportstream=1;
+			p->number = MAX_AV_CH;
+			
+			for(i=0;i<MAX_AV_CH;i++)
+			{
+				p->streams[i].index = i;
+				p->streams[i].channel = i;
+			}
+            DEBUG_P2P("set support Multi-CH\n\n\n");
+			if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_GETSUPPORTSTREAM_RESP, (char *)p, size) == AV_ER_NoERROR)
+			{			    
+				for(i=1; i<MAX_AV_CH; i++)
+				{
+				    DEBUG_P2P("enable CH%d\n",i);
+                    ret=avServStart(SID, "admin", gP2PPassword, 10, SERVTYPE_STREAM_SERVER, i);
+                    //ret = avServStart3(SID, AuthCallBackFn,10, SERVTYPE_STREAM_SERVER, i, &nResend);
+                    if(ret < 0)
+					{
+						DEBUG_P2P("avServStart failed SID[%d] code[%d]!!!\n", SID, ret);
+						IOTC_Session_Close(SID);
+                        if (ret == AV_ER_INVALID_ARG)
+                        {
+                            DEBUG_P2P("[P2P] Same login error with AV_ER_INVALID_ARG[%d]\n", ret);
+                            DEBUG_P2P("[P2P] ARGU: SID:%d, gP2PPassword: %s, SERV TPE: 0x%X, channel ID:%d\n",
+                                                SID, gP2PPassword, SERVTYPE_STREAM_SERVER, i);
+                            same_err++;
+                            if(same_err++ >= 3)
+                            {
+                                same_err = 0;
+                                Force_RESET_TUTK =1;
+                                DEBUG_P2P("[P2P] Reset TUTK...\n");
+                            }
+                        }
+                        else
+                            same_err = 0;
+						return;
+					}
+                    gClientInfo[SID].avIndex[i]=ret;
+					//avServSetResendSize(gClientInfo[SID].avIndex[i],64);
+                    DEBUG_P2P("@@ avServStart OK SID[%d] idx[%d]\n", SID, gClientInfo[SID].avIndex[i]);								
+				}
+                	}
+		}
+		break;
+
+        case IOTYPE_USER_IPCAM_GETPASSWORD_REQ:
+		{
+			//SMsgAVIoctrlGetPasswdReq *p= (SMsgAVIoctrlGetPasswdReq *)buf;
+			SMsgAVIoctrlGetPasswdResp *q= (SMsgAVIoctrlGetPasswdResp *)buf;
+			int size=sizeof(SMsgAVIoctrlGetPasswdResp);
+			
+            DEBUG_P2P("IOTYPE_IPCAM_GETPASSWORD_REQ\n");
+            memcpy(q->passwd,UI_P2P_PSW,UI_P2P_PSW_MAX_LEN);
+printf("Get PW:%s\n",UI_P2P_PSW);            
+			avSendIOCtrl(avIndex,IOTYPE_USER_IPCAM_GETPASSWORD_RESP, (char *) q, size);
+				
+		}	
+		break;
+		case IOTYPE_USER_IPCAM_SETPASSWORD_REQ:
+		{
+			SMsgAVIoctrlSetPasswdReq *p= (SMsgAVIoctrlSetPasswdReq *)buf;
+			SMsgAVIoctrlSetPasswdResp *q= (SMsgAVIoctrlSetPasswdResp *)buf;
+			int size=sizeof(SMsgAVIoctrlSetPasswdResp);
+			DEBUG_P2P("IOTYPE_IPCAM_SETPASSWORD_REQ\n");
+			strcpy(gP2PPassword,p->newpasswd);
+			DEBUG_P2P("New password = %s\n",gP2PPassword);
+			uiSetP2PPassword(gP2PPassword);
+			
+			q->result=0;
+			avSendIOCtrl(avIndex,IOTYPE_USER_IPCAM_SETPASSWORD_RESP, (char *) q, size);
+				
+		}	
+		break;
+		#if 1
+		case IOTYPE_USER_IPCAM_GETSTREAMCTRL_REQ: //視訊品質 get
+			{
+				int size = sizeof(int) + (sizeof(SStreamDef)*MAX_AV_CH);
+				SMsgAVIoctrlGetStreamCtrlResq *p = (SMsgAVIoctrlGetStreamCtrlResq *)buf;
+				DEBUG_P2P("IOTYPE_IPCAM_GETSTREAMCTRL_REQ\n\n");
+				p->quality=videoquality;
+				if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_GETSTREAMCTRL_RESP, (char *)p, size) == AV_ER_NoERROR)
+				{
+			    	DEBUG_P2P("orl STREAMCTRL level =%d \n\n",p->quality);
+					DEBUG_P2P("IOTYPE_IPCAM_GETSTREAMCTRL_REQ OK \n\n");
+				}
+             }
+		break;
+		case IOTYPE_USER_IPCAM_SETSTREAMCTRL_REQ: //視訊品質 set. Set the resoultion to 720P/VGA/QVGA
+			{
+				int size = sizeof(SMsgAVIoctrlSetStreamCtrlResp);
+				int i;
+				SMsgAVIoctrlSetStreamCtrlReq *p = (SMsgAVIoctrlSetStreamCtrlReq *)buf;
+				SMsgAVIoctrlSetStreamCtrlResp *q = (SMsgAVIoctrlSetStreamCtrlResp *)buf;
+				DEBUG_P2P("STREAMCTRL level =%d \n\n",p->quality);
+				DEBUG_P2P("IOTYPE_IPCAM_SETSTREAMCTRL_REQ\n\n");			
+				
+				q->result=0;	
+
+				if (p->quality==1)
+				{
+					rfiu_TX_P2pVideoQuality = RFWIFI_P2P_QUALITY_HIGH;
+					videoquality=1;
+					gFirstConnect=1;
+				}
+				else if ((p->quality==2) || (p->quality==3))
+				{	
+					 rfiu_TX_P2pVideoQuality = RFWIFI_P2P_QUALITY_MEDI;
+					 
+					 videoquality=2;
+					gFirstConnect=1;
+				}
+				/*
+				else if (p->quality==3)
+				{
+					rfiu_TX_P2pVideoQuality = RFWIFI_P2P_QUALITY_LOW;	
+					
+					videoquality=3;
+					gFirstConnect=1;
+				}
+				*/
+				else
+				{
+					DEBUG_P2P("Set TX resoultion Fail.\n");
+					q->result=0x01;
+				}
+                        
+				if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_SETSTREAMCTRL_RESP, (char *)q, size) == AV_ER_NoERROR)
+				{
+			    	DEBUG_P2P("STREAMCTRL level result =%d \n\n",q->result);
+					DEBUG_P2P("IOTYPE_IPCAM_SETSTREAMCTRL_RESP OK \n\n");
+				}
+         	}
+		break;
+		#endif
+				
+		#if 1
+		case IOTYPE_USER_IPCAM_GETMOTIONDETECT_REQ: //移動偵測 get
+			{
+				
+				int size =sizeof(SMsgAVIoctrlGetMotionDetectResp);
+                //u8 cam;
+                u8 isEnable;
+				u8 sensitivity;
+				SMsgAVIoctrlGetMotionDetectReq *p = (SMsgAVIoctrlGetMotionDetectReq *)buf;
+				SMsgAVIoctrlGetMotionDetectResp *q = (SMsgAVIoctrlGetMotionDetectResp *)buf;
+				
+			
+				DEBUG_P2P("IOTYPE_IPCAM_GETMOTIONDETECT_REQ\n\n");
+                sysGet_MotionEnable(p->channel,&isEnable, &sensitivity,&sensitivity);
+                if(!isEnable)                    
+                    q->sensitivity=0;
+				else
+					q->sensitivity=sensitivity;
+	    		if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_GETMOTIONDETECT_RESP, (char*)q, size)== AV_ER_NoERROR)
+				{
+					DEBUG_P2P("GETMOTIONDETECT_RESP OK:channel:%d, sensitivity:%d\n\n",q->channel,q->sensitivity);
+				}
+              }
+		break;
+		case IOTYPE_USER_IPCAM_SETMOTIONDETECT_REQ: //移動偵測 set
+			{
+				
+				int size =sizeof(SMsgAVIoctrlSetMotionDetectResp);
+				//int sensitivity;
+                int isEnable;
+				SMsgAVIoctrlSetMotionDetectReq *p = (SMsgAVIoctrlSetMotionDetectReq *)buf;
+				SMsgAVIoctrlSetMotionDetectResp *q = (SMsgAVIoctrlSetMotionDetectResp *)buf;
+		
+				DEBUG_P2P("IOTYPE_IPCAM_SETMOTIONDETECT_REQ: channel:%d, sensitivity:%d\n\n",p->channel,p->sensitivity);
+				if(p->sensitivity!=0)
+                    isEnable=1;
+                else
+                    isEnable=0;
+                if(!sysSet_MotionEnable(p->channel,isEnable, p->sensitivity,p->sensitivity))
+				{
+		    		DEBUG_P2P("USER_IPCAM_SET_SENSITIVITY Fail!! \n");
+				}
+				else
+				{
+		    		DEBUG_P2P("USER_IPCAM_SET_SENSITIVITY OK!! \n");
+				}						
+	
+				if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_SETMOTIONDETECT_RESP, (char *)q, size) == AV_ER_NoERROR)
+				{
+					DEBUG_P2P("IOTYPE_IPCAM_SETMOTIONDETECT_RESP OK \n\n");
+				}
+       		}
+		break;
+		#endif
+		
+		case IOTYPE_USER_IPCAM_PTZ_COMMAND: // PTZ
+			{
+				SMsgAVIoctrlPtzCmd *p = (SMsgAVIoctrlPtzCmd *)buf;
+				//PTZ_CHN = (gClientInfo[SID].avChannel %4);
+				PTZ_CHN=p->channel;
+				DEBUG_P2P("IOTYPE_IPCAM_PTZ_COMMAND\n\n");
+				printf("PTZ: Command=%d\n",p->control);
+				printf("PTZ: speed=%d\n",p->speed);
+				printf("PTZ: channel=%d\n",PTZ_CHN);
+				//sysRFRxInMainCHsel=p->channel;
+	
+				switch(p->control)
+				{
+					#if 0
+					case 1: //up					
+					uiSetRfNumberRxToTx(SYS_UNTOUCHDE_PAN_ARROW_LEFT,PTZ_CHN ); 
+					break;
+					case 2:	//down
+					uiSetRfNumberRxToTx(SYS_UNTOUCHDE_PAN_ARROW_RIGHT,PTZ_CHN ); 
+					break;
+					case 3:	//left
+					uiSetRfNumberRxToTx(SYS_UNTOUCHDE_PAN_ARROW_DOWN,PTZ_CHN); 
+					break;	
+					case 6:	//right
+					uiSetRfNumberRxToTx(SYS_UNTOUCHDE_PAN_ARROW_UP,PTZ_CHN ); 
+					break;	
+					#endif
+					
+					case 1: //up
+						rfiuSetMotorCtrl_TX(UI_SET_MOTOR_ARROW_UP);
+						break;
+					case 2:	//down
+						rfiuSetMotorCtrl_TX(UI_SET_MOTOR_ARROW_DOWN);
+						break;
+					case 3:	//right
+						rfiuSetMotorCtrl_TX(UI_SET_MOTOR_ARROW_RIGHT);
+						break;
+					case 6:	//left
+						rfiuSetMotorCtrl_TX(UI_SET_MOTOR_ARROW_LEFT);
+						break;
+					default:
+					break;	
+				}
+						
+             }
+		break;
+
+		#if 0
+		case IOTYPE_USER_IPCAM_GETRECORD_REQ: //錄影模式 get
+			{
+				int size =  sizeof(SMsgAVIoctrlGetRecordResq);
+				unsigned int mode;
+				SMsgAVIoctrlGetRecordReq *p = (SMsgAVIoctrlGetRecordReq *)buf;
+				SMsgAVIoctrlGetRecordResq *q = (SMsgAVIoctrlGetRecordResq *)buf;
+		
+				DEBUG_P2P("IOTYPE_IPCAM_GETRECORD_REQ \n\n");
+				if(sysGetRecordMode(&mode)<0)
+				{
+					DEBUG_P2P("GETRECORD Fail!!\n");
+					q->recordType=-1;	
+				}	
+				else
+				{
+					DEBUG_P2P("GETRECORD OK!!\n");
+					q->recordType=mode;	
+				}		
+				if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_GETRECORD_RESP, (char *)p, size) == AV_ER_NoERROR)
+				{
+					DEBUG_P2P("IOTYPE_IPCAM_GETRECORD_RESP OK\n\n");
+				}
+			}
+		break;
+		
+		case IOTYPE_USER_IPCAM_SETRECORD_REQ: //錄影模式 set
+			{
+				int size =  sizeof(SMsgAVIoctrlSetRecordResp);
+				
+				SMsgAVIoctrlSetRecordReq *p = (SMsgAVIoctrlSetRecordReq *)buf;
+				SMsgAVIoctrlSetRecordResp *q = (SMsgAVIoctrlSetRecordResp *)buf;
+				DEBUG_P2P("IOTYPE_IPCAM_SETRECORD_REQ \n\n");
+				DEBUG_P2P(" mode =%d \n\n",p->recordType);
+				if(sysSetRecordMode(p->recordType)<0)
+				{
+					DEBUG_P2P("SETRECORD Fail!!\n");
+					q->result=-1;	
+				}	
+				else
+				{
+					DEBUG_P2P("SETRECORD OK!!\n");
+					q->result=1;	
+				}
+				if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_SETRECORD_RESP, (char *)q, size)== AV_ER_NoERROR)
+				{
+					DEBUG_P2P("IOTYPE_IPCAM_SETRECORD_RESP OK\n\n");
+					DEBUG_P2P(" mode result =%d \n\n",p->recordType);
+				}
+			}
+		break;
+		#endif
+		case IOTYPE_USER_IPCAM_SPEAKERSTART:
+		{
+			DEBUG_P2P("IOTYPE_IPCAM_SPEAKERSTART:%d\n",CurrentCH);			
+			if(gSpeakerSID <= 0)
+			{
+				SMsgAVIoctrlAVStream *p = (SMsgAVIoctrlAVStream *)buf;
+				DEBUG_P2P("[SPEAKERSTART]cCh-%d:pCh-%d\n",CurrentCH, p->channel);		
+				gClientInfo[SID].speakerCh = p->channel;
+				gSpeakerSID = SID;
+				regedit_client_to_speaker(SID, avIndex);
+				rfiu_AudioRetONOFF_APP(1,CurrentCH);
+				rfiu_iisTX_TalkPlay(CurrentCH);
+				if(OSTaskCreate(Task_Speaker, (void *)CurrentCH, SPEAKER_TASK_STACK, SPEAKER_TASK_PRIORITY) != OS_NO_ERR)
+				{
+					DEBUG_P2P("OSTaskCreate Task_Speaker failed!!!!!!!!!!!!!!!!!!!\n");
+					return;
+				}
+				iComm_speak = 1;
+			}
+		}
+		break;
+		
+		case IOTYPE_USER_IPCAM_SPEAKERSTOP:
+		{
+			DEBUG_P2P("IOTYPE_IPCAM_SPEAKERSTOP\n");
+			if(gClientInfo[SID].bEnableSpeaker>0)
+			{
+				Kill_Task_Speaker(SID);
+			}
+			iComm_speak = 0;
+		}          
+		break;		
+		
+		case IOTYPE_USER_IPCAM_GETAUDIOOUTFORMAT_REQ:
+		{
+			int size = sizeof(int) + sizeof(SMsgAVIoctrlGetAudioOutFormatResp);
+	
+			SMsgAVIoctrlGetAudioOutFormatResp *q = (SMsgAVIoctrlGetAudioOutFormatResp *)buf;
+
+			DEBUG_P2P("IOTYPE_IPCAM_GETAUDIOOUTFORMAT_REQ\n");
+			q->format=0x8C;
+			if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_GETAUDIOOUTFORMAT_RESP, (char *)q, size) == AV_ER_NoERROR)
+			{
+				DEBUG_P2P("IOTYPE_IPCAM_GETAUDIOOUTFORMAT_RESP OK \n\n");
+			}		
+		}	
+		break;
+
+		case IOTYPE_USER_IPCAM_RECEIVE_FIRST_IFRAME:
+		{
+			gClientInfo[SID].VOLSend = 1; 
+			DEBUG_P2P("IOTYPE_IPCAM_RECEIVE_FIRST_IFRAME OK \n");
+		}	
+		break;
+
+		case IOTYPE_USER_IPCAM_DEVINFO_REQ:
+		{
+			int size =  sizeof(SMsgAVIoctrlDeviceInfoResp);
+			//unsigned char model[16]="---";
+			unsigned char vendor[16]="---";
+			unsigned int version=0x01020304;
+			FS_DISKFREE_T *diskInfo;
+		    u16 total_size=0;
+			u16 usage_size=0;
+		    u16 remain_size=0;
+			SMsgAVIoctrlDeviceInfoResp *q = (SMsgAVIoctrlDeviceInfoResp *)buf;
+			
+			DEBUG_P2P("IOTYPE_IPCAM_DEVINFO_REQ OK \n");
+			strcpy(q->model,Model_name);
+			strcpy(q->vendor,vendor);
+			q->version=version;
+			//get the SD card information.
+
+			if((gInsertCard==1)&&(got_disk_info!= 0))
+            {
+                diskInfo=&global_diskInfo;   
+                total_size=diskInfo->total_clusters*diskInfo->sectors_per_cluster/(1024*2);
+                remain_size=diskInfo->avail_clusters*1000/diskInfo->total_clusters;
+                usage_size=1000- remain_size;                                
+            }
+            else
+            {
+                total_size=0;
+                usage_size=0;
+                remain_size=0;    
+            }
+            //DEBUG_P2P("total_size  : %d \n", total_size);
+           	//DEBUG_P2P("remain_size : %d \n", remain_size);
+           	//DEBUG_P2P("usage_size  : %d \n", usage_size);
+			q->total=total_size;
+			q->free=remain_size;
+			if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_DEVINFO_RESP, (char *)q, size)== AV_ER_NoERROR)
+			{
+				DEBUG_P2P("IOTYPE_IPCAM_DEVINFO_RESP OK\n\n");
+			}
+			
+		}	
+		break;
+
+		case IOTYPE_USER_IPCAM_FORMATEXTSTORAGE_REQ:
+		{
+			int size =  sizeof(SMsgAVIoctrlFormatExtStorageResp);
+			//SMsgAVIoctrlFormatExtStorageReq *p = (SMsgAVIoctrlFormatExtStorageReq *)buf;
+			SMsgAVIoctrlFormatExtStorageResp *q=(SMsgAVIoctrlFormatExtStorageResp *)buf;
+			
+			DEBUG_P2P("IOTYPE_IPCAM_FORMATEXTSTORAGE_REQ OK \n");
+			sysSetEvt(SYS_EVT_PLAYBACK_FORMAT, 0);
+			q->result=0;
+
+			if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_FORMATEXTSTORAGE_RESP, (char *)q, size)== AV_ER_NoERROR)
+			{
+				DEBUG_P2P("IOTYPE_IPCAM_FORMATEXTSTORAGE_RESP OK\n\n");
+			}
+		}	
+		break;
+#if 0	//REMOTE_FILE_PLAYBACK
+
+		case IOTYPE_USER_IPCAM_LISTEVENT_REQ:
+		{
+			SMsgAVIoctrlListEventReq *p = (SMsgAVIoctrlListEventReq *)buf;
+			DEBUG_P2P("IOTYPE_IPCAM_LISTEVENT_REQ\n");
+			gbSearchEvent=0;
+			get_recorded_filelist(p,SID,avIndex);			
+			DEBUG_P2P("IOTYPE_IPCAM_LISTEVENT_RESP OK \n\n");
+		}	
+		break;
+		
+		case IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL:
+		{
+			SMsgAVIoctrlPlayRecord *p = (SMsgAVIoctrlPlayRecord *)buf;
+			SMsgAVIoctrlPlayRecordResp *q=(SMsgAVIoctrlPlayRecordResp *)buf;
+			u8 error;
+			u32 *tmp;
+			DEBUG_P2P("IOTYPE_IPCAM_RECORD_PLAYCONTROL-%d\n",p->command);
+
+			switch (p->command)
+			{
+				case AVIOCTRL_RECORD_PLAY_START :
+				{
+					DEBUG_P2P("AVIOCTRL_RECORD_PLAY_START\n");
+					Remoteplayback_CH=p->channel;
+					gRemote_playfile=*p;	
+					regedit_client_to_video(SID);
+					gClientInfo[SID].bPausePlayBack = 0;
+					gClientInfo[SID].bStopPlayBack = 0;
+					gClientInfo[SID].playBackCh = IOTC_Session_Get_Free_Channel(SID);
+					q->command=p->command;
+					q->result=gClientInfo[SID].playBackCh;
+					gPlaybackSID=SID;
+				
+					get_recorded_filelist((SMsgAVIoctrlListEventReq *)p,SID,avIndex);
+					DEBUG_P2P("PLAY FILE: %d/%d/%d %d:%d:%d CH=%d.\n",gRemote_playfile.stTimeDay.year,gRemote_playfile.stTimeDay.month,gRemote_playfile.stTimeDay.day,gRemote_playfile.stTimeDay.hour,gRemote_playfile.stTimeDay.minute,gRemote_playfile.stTimeDay.second,gRemote_playfile.channel);
+					tmp=(u32 *)q->reserved;
+					*tmp=GetVideoDuration(dcfPlaybackCurFile->pDirEnt->d_name)*1000;									
+					if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL_RESP, (char *)q, sizeof(SMsgAVIoctrlPlayRecordResp)) == AV_ER_NoERROR)
+					{
+						DEBUG_P2P("IOTYPE_IPCAM_RECORD_PLAYCONTROL_RESP OK \n\n");
+					}
+					
+					P2PEnableplaybackStreaming++;
+					P2PPlaybackVideoStop=0;
+                    DEBUG_P2P("Fileplaying= %d,Remote_play= %d \n",Fileplaying,Remote_play);
+                    if(Fileplaying)
+                        Remoteplayback_busy();
+                    else
+                    {
+                        Fileplaying=1;
+                        Remote_play=1;
+                        error=OSTaskCreate(Task_remote_file_playback, (void *)0,P2P_PLAYFILE_TASK_STACK, P2P_PLAYFILE_TASK_PRIORITY);
+						if(error!=OS_NO_ERR)
+							DEBUG_P2P("OSTaskCreate error : %d\n",error);
+                    }
+				}	
+				break;
+				/*
+				case AVIOCTRL_RECORD_PLAY_STOP:
+				{
+					u8 err;
+					DEBUG_P2P("AVIOCTRL_RECORD_PLAY_STOP\n");
+					P2PPlaybackVideoStop=1;
+					unregedit_client_from_video(SID);
+					gClientInfo[SID].bStopPlayBack = 1;
+					gClientInfo[SID].bPausePlayBack = 0;
+					OSSemSet(P2PVideoPlaybackCmpSemEvt, 0, &err);
+					OSSemSet(P2PAudioPlaybackCmpSemEvt, 0, &err); 
+                    DEBUG_P2P("Fileplaying=%d ,Remote_play=%d \n",Fileplaying,Remote_play);
+                    if((Fileplaying==1)&&(Remote_play==1))
+                    {
+    					OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY);
+                        Fileplaying=0;
+                        Remote_play=0;
+						P2PEnableplaybackStreaming=0;
+						gClientInfo[SID].playBackCh=-1;
+
+  	                 }  
+					avServStop(gClientInfo[SID].avChannel);
+				}
+				break;
+				*/			
+				case AVIOCTRL_RECORD_PLAY_STOP:
+				{
+					u8 err;
+					//u8 error;
+					u8 tmp;
+					DEBUG_P2P("AVIOCTRL_RECORD_PLAY_STOP\n");
+
+					/*
+					P2PEnableplaybackStreaming--;
+					if(P2PEnableplaybackStreaming<0)
+							P2PEnableplaybackStreaming=0;
+					*/
+					tmp=0;
+					while((P2P_playback_go != 1)&&(tmp<100))	
+					{
+						OSTimeDly(1);	
+						tmp++;
+					}	
+					printf("P2PEnableplaybackStreaming333=%d\n",P2PEnableplaybackStreaming);
+					if(gClientInfo[SID].bStopPlayBack<=0)
+					{		
+					    P2P_check=0;
+						P2PPlaybackVideoStop=1;
+                                                CurrPlaybackSID=SID;
+						unregedit_client_from_video(SID);
+						gClientInfo[SID].bStopPlayBack = 1;
+						gClientInfo[SID].bPausePlayBack = 0;
+						avServStop(gClientInfo[SID].avChannel);	
+						gClientInfo[SID].playBackCh=0;
+						OSSemSet(P2PVideoPlaybackCmpSemEvt, 0, &err);
+						if(err!= OS_NO_ERR)
+							printf("111Set P2PVideoPlaybackCmpSemEvt fail = %d\n", err);
+						OSSemSet(P2PAudioPlaybackCmpSemEvt, 0, &err); 						
+						if(err!= OS_NO_ERR)
+							printf("111Set P2PAudioPlaybackCmpSemEvt fail = %d\n", err);
+                        OSSemDel(P2PVideoPlaybackCmpSemEvt, OS_DEL_ALWAYS, &err);
+						if(err!= OS_NO_ERR)
+							printf("Del P2PVideoPlaybackCmpSemEvt fail = %d\n", err);
+						OSSemDel(P2PAudioPlaybackCmpSemEvt, OS_DEL_ALWAYS, &err);
+						if(err!= OS_NO_ERR)
+							printf("Del P2PAudioPlaybackCmpSemEvt fail = %d\n", err);
+   	        	        DEBUG_P2P("Fileplaying=%d ,Remote_play=%d \n",Fileplaying,Remote_play);
+           	        	if((Fileplaying)&&(Remote_play==1))
+                	    {
+   	                		DEBUG_P2P("DELETE P2P PLAYFILE TASK.\n");
+    						if(OS_NO_ERR !=  OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY))
+                                DEBUG_P2P("OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+               	    		OSFlagPend(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_PLAY_FINISH, OS_FLAG_WAIT_CLR_ALL|OS_FLAG_CONSUME, OS_IPC_WAIT_FOREVER, &err);
+                            DEBUG_P2P("pend FLAGSYS_RDYSTAT_PLAY_FINISH.\n");
+                            if(OS_NO_ERR !=  OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY))
+                                DEBUG_P2P("OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+          
+							//if(error!=OS_NO_ERR)
+							    //DEBUG_P2P("OSTaskDel error : %d\n",error);
+        	                Fileplaying=0;
+            	            Remote_play=0;
+							P2PEnableplaybackStreaming=0;
+							//OSTimeDly(10);
+  	 	                }    					
+					}
+					else
+							avServStop(gClientInfo[SID].avChannel);
+				}
+				break;
+
+				case AVIOCTRL_RECORD_PLAY_PAUSE:
+				{
+					DEBUG_P2P("AVIOCTRL_RECORD_PLAY_PAUSE\n");	
+					q->command=p->command;
+					q->result=0;
+					if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL_RESP, (char *)q, sizeof(SMsgAVIoctrlPlayRecordResp)) == AV_ER_NoERROR)
+					{
+						DEBUG_P2P("IOTYPE_IPCAM_RECORD_PLAYCONTROL_RESP OK \n\n");
+					}
+					gClientInfo[SID].bPausePlayBack = !gClientInfo[SID].bPausePlayBack;
+				}
+				break;
+			}	
+		}	
+		break;	
+		#endif
+		case IOTYPE_USER_IPCAM_SET_TIMEZONE_REQ:
+		{
+			int size =  sizeof(SMsgAVIoctrlTimeZone);
+			RTC_TIME_ZONE zone;
+			SMsgAVIoctrlTimeZone *p = (SMsgAVIoctrlTimeZone *)buf;
+			DEBUG_P2P("IOTYPE_IPCAM_SET_TIMEZONE_REQ OK \n");
+			p->nIsSupportTimeZone=1;
+			p->cbSize=size;
+			strcpy(timezone_des,p->szTimeZoneString);
+			(p->nGMTDiff>0)?(zone.operator=0):(zone.operator=1);
+			zone.hour=abs(p->nGMTDiff/60);
+			zone.min=abs(p->nGMTDiff%60);
+			DEBUG_P2P("Set TimeZone.hour:%d, min:%d\n",zone.hour,zone.min);
+			RTC_Set_TimeZone(&zone);
+			if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_SET_TIMEZONE_RESP, (char *)p, size)== AV_ER_NoERROR)
+			{
+				DEBUG_P2P("IOTYPE_IPCAM_SET_TIMEZONE_RESP OK\n\n");
+			}
+		}	
+		break;
+		case IOTYPE_USER_IPCAM_GET_TIMEZONE_REQ:
+		{
+			int size =  sizeof(SMsgAVIoctrlTimeZone);
+			RTC_TIME_ZONE zone;
+			//char timezone_des[256]="Taiwan";
+		
+			SMsgAVIoctrlTimeZone *q = (SMsgAVIoctrlTimeZone *)buf;
+			DEBUG_P2P("IOTYPE_IPCAM_GET_TIMEZONE_REQ OK \n");
+			RTC_Get_TimeZone(&zone);
+			q->cbSize=size;
+			zone.operator?(q->nGMTDiff=(0-zone.hour*60+zone.min)):(q->nGMTDiff=zone.hour*60+zone.min);
+			DEBUG_P2P("Get TimeZone= %d minutes\n",q->nGMTDiff);
+			q->nIsSupportTimeZone=1;
+			strcpy(q->szTimeZoneString,timezone_des);
+			if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_GET_TIMEZONE_RESP, (char *)q, size)== AV_ER_NoERROR)
+			{
+				DEBUG_P2P("IOTYPE_IPCAM_GET_TIMEZONE_RESP OK\n\n");
+			}
+		}	
+		break;
+
+		case IOTYPE_USER_IPCAM_GET_DEVICESHOW_REQ://完成
+		{
+			int size =  sizeof(SMsgAVIoctrlGetDeviceShowResp);
+			struct NetworkInfo info;
+			SMsgAVIoctrlGetDeviceShowResp *q = (SMsgAVIoctrlGetDeviceShowResp *)buf;
+			//memset(q,0,size);
+			DEBUG_P2P("IOTYPE_IPCAM_GET_DEVICESHOW_REQ OK \n");
+			GetNetworkInfo(&info);
+			sprintf(q->ipAddress,"%d.%d.%d.%d",info.IPaddr[0],info.IPaddr[1],info.IPaddr[2],info.IPaddr[3]);
+			sprintf(q->getwayAddress,"%d.%d.%d.%d",info.Gateway[0],info.Gateway[1],info.Gateway[2],info.Gateway[3]);		
+			sprintf(q->netMask,"%d.%d.%d.%d",info.Netmask[0],info.Netmask[1],info.Netmask[2],info.Netmask[3]);
+			DEBUG_P2P("IP=%s\n",q->ipAddress);
+			DEBUG_P2P("Netmask=%s\n",q->netMask);
+			DEBUG_P2P("Gateway=%s\n",q->getwayAddress);
+			
+			if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_GET_DEVICESHOW_RESP, (char*)q, size)== AV_ER_NoERROR)
+			{
+				DEBUG_P2P("IOTYPE_IPCAM_GET_DEVICESHOW_RESP OK\n\n");
+			}
+		}	
+		break;		
+// ----------------------
+// 以下為 Light 設置 20150917 Sean
+// ----------------------
+#if UI_LIGHT_SUPPORT
+#if 0 /* Only For 9200 Use, 8200 Tx Can Not Update. */
+		case IOTYPE_RDI_GETLIGHTCHECK_REQ:
+		{
+			int size =	sizeof(SMsgAVIoctrlGetLightSupportResp);
+			int i;
+			SMsgAVIoctrlGetLightSupportReq	*p = (SMsgAVIoctrlGetLightSupportReq *)buf;
+			SMsgAVIoctrlGetLightSupportResp *q = (SMsgAVIoctrlGetLightSupportResp*)buf;
+
+			DEBUG_P2P("IOTYPE_RDI_GETLIGHTCHECK_REQ OK \n");
+
+			if(p->channel == 255)
+			{
+				for(i=0;i<MAX_AV_CH;i++)
+				{
+					if(gRfiuUnitCntl[i].RFpara.TxCodeVersion[31] & UI_VERSION_BIT_LIGHT)
+					{
+						q->lightsupport = 1; //Support Light
+						break;
+					}
+					else
+						q->lightsupport = 0; //NOT Support Light
+				}
+			}
+			else
+			{
+				if(gRfiuUnitCntl[p->channel].RFpara.TxCodeVersion[31] & UI_VERSION_BIT_LIGHT)
+				{
+					q->lightsupport = 1; //Support Light
+					//break;
+				}
+				else
+					q->lightsupport = 0; //NOT Support Light
+			}
+			
+			if(avSendIOCtrl(avIndex, IOTYPE_RDI_GETLIGHTCHECK_RESP, (char*)q, size)== AV_ER_NoERROR)
+			{
+				DEBUG_P2P("IOTYPE_RDI_GETLIGHTCHECK_RESP OK\n\n");
+			}
+
+		}
+		break;
+#endif
+		case IOTYPE_RDI_GETLIGHTSTATUS_REQ:
+		{
+                    int size =  sizeof(SMsgAVIoctrlGetLightStatusResp);
+
+                    SMsgAVIoctrlGetLightStatusReq *p	 = (SMsgAVIoctrlGetLightStatusReq *)buf;
+                    SMsgAVIoctrlGetLightStatusResp *q  = (SMsgAVIoctrlGetLightStatusResp *)buf;
+
+                    DEBUG_P2P("IOTYPE_RDI_GETLIGHTSTATUS_REQ OK \n");
+
+                    Light_CHN =  p->channel;			
+                        
+/*    
+UI_LIGHT_OFF			=0
+UI_LIGHT_MANUAL_OFF	=1
+UI_LIGHT_TIMER_ON	=2
+UI_LIGHT_MANUAL_ON	=3
+UI_LIGHT_TRIGGER_ON	=4
+*/
+                    if((iconflag[UI_MENU_SETIDX_CH1_LS_STATUS + Light_CHN])<2)
+                        q->status = 0;
+                    else
+                        q->status = 1;
+
+                    if(avSendIOCtrl(avIndex, IOTYPE_RDI_GETLIGHTSTATUS_RESP, (char*)q, size)== AV_ER_NoERROR)
+                    {
+                        DEBUG_P2P("IOTYPE_RDI_GETLIGHTSTATUS_RESP OK\n\n");
+                    }
+		}	
+		break;
+		
+		case IOTYPE_RDI_SETLIGHTSTATUS_REQ:
+		{
+                    int size =  sizeof(SMsgAVIoctrlSetLightStatusResp);
+
+                    SMsgAVIoctrlSetLightStatusReq *p	 = (SMsgAVIoctrlSetLightStatusReq *)buf;
+                    SMsgAVIoctrlSetLightStatusResp *q  = (SMsgAVIoctrlSetLightStatusResp *)buf;
+
+                    DEBUG_P2P("IOTYPE_RDI_SETLIGHTSTATUS_REQ OK \n");
+
+                    Light_CHN =  p->channel;	
+
+                    if(p->status == 0)
+                    {
+                        if(iconflag[UI_MENU_SETIDX_CH1_LS_STATUS+Light_CHN] >1) //Set Light OFF
+                            uiCheckLightManualSwitchStatus(Light_CHN);
+                        else //If App Setting & 8200 Setting are different, 8200 send sync to APP
+                            UpdateAPPLightStatus(Light_CHN);
+
+                        uiFlowSetRfLightStatus(Light_CHN, 0, 2);    //Set LCD icon OFF
+
+                        if(iconflag[UI_MENU_SETIDX_CH1_LS_STATUS+Light_CHN] < 2)
+                            q->result = 0;
+                        else
+                            q->result = 1;
+                    }
+                    if(p->status == 1)
+                    {
+                        if(iconflag[UI_MENU_SETIDX_CH1_LS_STATUS+Light_CHN] < 2) //Set Light ON
+                            uiCheckLightManualSwitchStatus(Light_CHN);
+                        else //If App Setting & 8200 Setting are different, 8200 send sync to APP
+                            UpdateAPPLightStatus(Light_CHN);
+                        
+                        uiFlowSetRfLightStatus(Light_CHN, 3, 2);    //Set LCD icon ON
+
+                        if(iconflag[UI_MENU_SETIDX_CH1_LS_STATUS+Light_CHN] > 1)
+                            q->result = 0;
+                        else
+                            q->result = 1;                        
+                    }  		
+			
+                    if(avSendIOCtrl(avIndex, IOTYPE_RDI_SETLIGHTSTATUS_RESP, (char*)q, size)== AV_ER_NoERROR)
+                    {
+                        DEBUG_P2P("IOTYPE_RDI_SETLIGHTSTATUS_RESP OK\n\n");
+                    }
+		}	
+		break;		
+
+		case IOTYPE_RDI_GETLIGHTCONFIG_REQ:
+		{
+                    int size =  sizeof(SMsgAVIoctrlGetLightConfigResp);
+
+                    SMsgAVIoctrlGetLightConfigReq *p	 = (SMsgAVIoctrlGetLightConfigReq *)buf;
+                    SMsgAVIoctrlGetLightConfigResp *q  = (SMsgAVIoctrlGetLightConfigResp *)buf;
+
+                    DEBUG_P2P("IOTYPE_RDI_GETLIGHTCONFIG_REQ OK \n");
+
+                    Light_CHN =  p->channel;
+                    q->st.repeat[6]=(iconflag[UI_MENU_SETIDX_CH1_LS_TIMER+ Light_CHN]&64)>0?1:0;
+                    q->st.repeat[5]=(iconflag[UI_MENU_SETIDX_CH1_LS_TIMER+ Light_CHN]&32)>0?1:0;
+                    q->st.repeat[4]=(iconflag[UI_MENU_SETIDX_CH1_LS_TIMER+ Light_CHN]&16)>0?1:0;
+                    q->st.repeat[3]=(iconflag[UI_MENU_SETIDX_CH1_LS_TIMER+ Light_CHN]&8)>0?1:0;
+                    q->st.repeat[2]=(iconflag[UI_MENU_SETIDX_CH1_LS_TIMER+ Light_CHN]&4)>0?1:0;
+                    q->st.repeat[1]=(iconflag[UI_MENU_SETIDX_CH1_LS_TIMER+ Light_CHN]&2)>0?1:0;
+                    q->st.repeat[0]=(iconflag[UI_MENU_SETIDX_CH1_LS_TIMER+ Light_CHN]&1)>0?1:0;
+                    q->dimmer = iconflag[UI_MENU_SETIDX_CH1_LS_DIMMER  	+ Light_CHN];
+                    q->duration =iconflag[UI_MENU_SETIDX_CH1_LS_DURATION	+ Light_CHN];
+                    q->st.lightonHour=		uiLightTimer[Light_CHN][0];
+                    q->st.lightonMinute=	uiLightTimer[Light_CHN][1];
+                    q->st.lightoffHour=	uiLightTimer[Light_CHN][2];
+                    q->st.lightoffMinute=	uiLightTimer[Light_CHN][3];
+
+                    if(avSendIOCtrl(avIndex, IOTYPE_RDI_GETLIGHTCONFIG_RESP, (char*)q, size)== AV_ER_NoERROR)
+                    {
+                        DEBUG_P2P("IOTYPE_RDI_GETLIGHTCONFIG_RESP OK\n\n");
+                    }
+		}	
+		break;
+
+		case IOTYPE_RDI_SETLIGHTCONFIG_REQ:
+		{
+                    int size =  sizeof(SMsgAVIoctrlSetLightConfigResp);
+                    u8 Repeat;
+
+                    SMsgAVIoctrlSetLightConfigReq *p	 = (SMsgAVIoctrlSetLightConfigReq *)buf;
+                    SMsgAVIoctrlSetLightConfigResp *q  = (SMsgAVIoctrlSetLightConfigResp *)buf;
+
+                    DEBUG_P2P("IOTYPE_RDI_SETLIGHTCONFIG_REQ OK \n");
+
+                    Light_CHN =  p->channel;
+                    Repeat = (64*(p->st.repeat[6])+32*(p->st.repeat[5])+16*(p->st.repeat[4])+8*(p->st.repeat[3])+4*(p->st.repeat[2])+2*(p->st.repeat[1])+(p->st.repeat[0]));
+                    if(Repeat != (iconflag[UI_MENU_SETIDX_CH1_LS_TIMER + Light_CHN]))
+                        iconflag[UI_MENU_SETIDX_CH1_LS_TIMER + Light_CHN] = Repeat;
+
+                    if(p->dimmer != (iconflag[UI_MENU_SETIDX_CH1_LS_DIMMER + Light_CHN]))
+                    {
+                        uiSetRfLightDimmerRxToTx(p->dimmer, Light_CHN);
+                        iconflag[UI_MENU_SETIDX_CH1_LS_DIMMER + Light_CHN] = p->dimmer;
+                    }
+                    
+                    if(p->duration != (iconflag[UI_MENU_SETIDX_CH1_LS_DURATION + Light_CHN]))
+                    {
+                        uiSetRfLightDurationRxToTx(p->duration, Light_CHN);
+                        iconflag[UI_MENU_SETIDX_CH1_LS_DURATION + Light_CHN] = p->duration;
+                    }  
+
+                    uiSetRfLightTimerRxToTx(p->st.lightonHour, p->st.lightonMinute, p->st.lightoffHour, p->st.lightoffMinute, Repeat, Light_CHN, 1);
+                    uiLightTimer[Light_CHN][0] = p->st.lightonHour;
+                    uiLightTimer[Light_CHN][1] = p->st.lightonMinute;
+                    uiLightTimer[Light_CHN][2] = p->st.lightoffHour;
+                    uiLightTimer[Light_CHN][3] = p->st.lightoffMinute;
+
+                    Save_UI_Setting();
+                    
+                    q->result = 0;
+
+                    if(avSendIOCtrl(avIndex, IOTYPE_RDI_SETLIGHTCONFIG_RESP, (char*)q, size)== AV_ER_NoERROR)
+                    {
+                        DEBUG_P2P("IOTYPE_RDI_SETLIGHTCONFIG_RESP OK\n\n");
+                    }
+		}
+		break;
+
+#endif			
+		case IOTYPE_USER_IPCAM_SETWIFI_REQ:
+		{
+                    int size =  sizeof(SMsgAVIoctrlGetLightStatusResp);
+
+
+                    SMsgAVIoctrlSetWifiReq *p	 = (SMsgAVIoctrlSetWifiReq *)buf;
+                    SMsgAVIoctrlSetWifiResp *q  = (SMsgAVIoctrlSetWifiResp *)buf;
+
+                    DEBUG_P2P("IOTYPE_USER_IPCAM_SETWIFI_REQ OK \n");
+
+        			memcpy(JOIN_DEFAULT_SSID, p->ssid, sizeof(JOIN_DEFAULT_SSID));
+        			memcpy(JOIN_DEFAULT_PSK, p->password, sizeof(JOIN_DEFAULT_PSK));
+                    DEBUG_RED("[WIFI INIT] SSID=%s, PWD=%s \n", (char *)p->ssid, (char *)p->password);
+                    iconflag[UI_MENU_SETIDX_NIGHT_LIGHT] = UI_MENU_SETIDX_LIGHT_ON;
+                    iconflag[UI_MENU_SETIDX_AP_SCONFIG_DETECT] = UI_BOOT_IN_AP_MODE;
+        			Save_UI_Setting();
+                    q->result = 1;
+                    if(avSendIOCtrl(avIndex, IOTYPE_USER_IPCAM_SETWIFI_RESP , (char*)q, size)== AV_ER_NoERROR)
+                    {
+                        DEBUG_P2P("IOTYPE_USER_IPCAM_SETWIFI_RESP OK\n\n");
+                    }
+                    sysForceWDTtoReboot();
+		}	
+		break;
+		default:
+		DEBUG_P2P("non-handle type[%X]\n", ioType);
+		break;
+	}
+}
+
+// ----------------------
+// 以下為主動 Update APP Light 設置 20150923 Sean
+// ----------------------
+#if UI_LIGHT_SUPPORT
+void UpdateAPPLightStatus(u8 Camid)
+{
+    AppLightStatus = Camid+1;
+}
+#endif
+
+u8 AVServerStart(int SID)
+{
+    /**** avIndex ****
+    SID 0 : 0, 1, 2, 3
+    SID 1 : 4, 5, 6, 7
+    SID 2 : 8, 9, A, B
+    SID 3 : C, D, E, F
+    *****************/
+    int ret;
+	int i=0;
+	
+	ret=avServStart(SID, "admin", gP2PPassword,10, SERVTYPE_STREAM_SERVER, 0);
+	if(ret < 0)
+	{
+		DEBUG_P2P("avServStart failed SID[%d] code[%d]!!!\n", SID, ret);
+		IOTC_Session_Close(SID);
+		return 1;
+	}
+	else
+	{
+	 gClientInfo[SID].avIndex[0]=ret;
+	 regedit_client_to_avsession(SID, gClientInfo[SID].avIndex[0]);    
+	 DEBUG_P2P("avServStart OK SID[%d] idx[%d] [%d]\n\n\n\n", SID, gClientInfo[SID].avIndex[0], gClientInfo[SID].bP2PConnected);
+	 for(i=0; i<MAX_AV_CH; i++)
+		 uiSetP2PImageLevel(i,7);
+	 return 0;
+	}
+}
+
+int Check_Session_Status(int SID)
+{
+	struct st_SInfo Sinfo;
+	int ret;
+	int i;
+	u8 err;
+	if(gClientInfo[SID].bP2PConnected == 0)
+    {   
+		return -1;
+    }   
+	ret = IOTC_Session_Check(SID, &Sinfo);
+	if(ret == IOTC_ER_SESSION_CLOSE_BY_REMOTE)
+	{
+		DEBUG_P2P("[thread_ForSessionHandler] remote site close this session, SID[%d]\n", SID);
+		if(gClientInfo[SID].bEnableSpeaker>0)
+		{
+			Kill_Task_Speaker(SID);
+		}	
+	}
+	else if(ret == IOTC_ER_REMOTE_TIMEOUT_DISCONNECT)
+	{
+		DEBUG_P2P("[thread_ForSessionHandler] disconnected due to remote site no response for a while SID[%d]\n", SID);
+		if(gClientInfo[SID].bEnableSpeaker>0)
+		{
+			Kill_Task_Speaker(SID);
+		}	
+	}
+	else if(ret == IOTC_ER_INVALID_SID)
+	{
+		DEBUG_P2P("[thread_ForSessionHandler] Session cant be used anymore\n");
+		if(gClientInfo[SID].bEnableSpeaker>0)
+		{
+			Kill_Task_Speaker(SID);
+		}	
+	}
+
+	if(ret < 0)
+	{
+		if(gClientInfo[SID].bEnableSpeaker>0)
+		{
+			Kill_Task_Speaker(SID);
+		}	
+		DEBUG_P2P("Check Session : Session close ret[%d] SID[%d]\n", ret, SID);
+		client_p2pdisconnected(SID);
+		/*Close remote playback task.*/
+		if(gClientInfo[SID].playBackCh!=0)
+		{
+			avServStop(gClientInfo[SID].avChannel);
+			P2PPlaybackVideoStop=1;
+			unregedit_client_from_video(SID);
+			gClientInfo[SID].bStopPlayBack = 1;
+			gClientInfo[SID].bPausePlayBack = 0;
+			P2PEnableplaybackStreaming--;
+printf("P2PEnableplaybackStreaming5555=%d\n",P2PEnableplaybackStreaming);
+				P2PEnableplaybackStreaming=0;
+				OSSemSet(P2PVideoPlaybackCmpSemEvt, 0, &err);
+				if(err!= OS_NO_ERR)
+					printf("222Set P2PVideoPlaybackCmpSemEvt fail = %d\n", err);
+				OSSemSet(P2PAudioPlaybackCmpSemEvt, 0, &err); 
+				if(err!= OS_NO_ERR)
+					printf("222Set P2PAudioPlaybackCmpSemEvt fail = %d\n", err);
+				OSSemDel(P2PVideoPlaybackCmpSemEvt, OS_DEL_ALWAYS, &err);
+				if(err!= OS_NO_ERR)
+					printf("222Del P2PVideoPlaybackCmpSemEvt fail = %d\n", err);
+				OSSemDel(P2PAudioPlaybackCmpSemEvt, OS_DEL_ALWAYS, &err);
+				if(err!= OS_NO_ERR)
+					printf("222Del P2PAudioPlaybackCmpSemEvt fail = %d\n", err);
+				gClientInfo[SID].playBackCh=0;
+	            DEBUG_P2P("Fileplaying= %d ,Remote_play= %d \n",Fileplaying,Remote_play);
+	           	DEBUG_P2P("DELETE P2P PLAYFILE TASK.\n");
+                if(OS_NO_ERR !=  OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY))
+                    DEBUG_P2P("OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+                
+                OSFlagPend(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_PLAY_FINISH, OS_FLAG_WAIT_CLR_ALL|OS_FLAG_CONSUME, OS_IPC_WAIT_FOREVER, &err);
+                DEBUG_P2P("pend FLAGSYS_RDYSTAT_PLAY_FINISH.\n");
+                
+                if(OS_NO_ERR !=  OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY))
+                    DEBUG_P2P("OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+	            Fileplaying=0;
+	            Remote_play=0;	
+         }    
+		
+		//for check device connect timeout by aher 2012/12/21
+		if(gOnlineNum<=0)
+		{
+			if(gFirstConnect)
+			{
+				if(gClientInfo[SID].bEnableSpeaker>0)
+				{
+					Kill_Task_Speaker(SID);
+				}	
+				/*Close remote playback task.*/
+				if((Fileplaying)&&(Remote_play==1))
+				{
+					P2PPlaybackVideoStop=1;
+					unregedit_client_from_video(SID);
+					gClientInfo[SID].bStopPlayBack = 1;
+					gClientInfo[SID].bPausePlayBack = 0;
+					P2PEnableplaybackStreaming=0;
+					OSSemSet(P2PVideoPlaybackCmpSemEvt, 0, &err);
+					if(err!= OS_NO_ERR)
+						printf("333Set P2PVideoPlaybackCmpSemEvt fail = %d\n", err);
+					OSSemSet(P2PAudioPlaybackCmpSemEvt, 0, &err); 
+					if(err!= OS_NO_ERR)
+						printf("333Set P2PAudioPlaybackCmpSemEvt fail = %d\n", err);
+					OSSemDel(P2PVideoPlaybackCmpSemEvt, OS_DEL_ALWAYS, &err);
+					if(err!= OS_NO_ERR)
+						printf("333Del P2PVideoPlaybackCmpSemEvt fail = %d\n", err);
+					OSSemDel(P2PAudioPlaybackCmpSemEvt, OS_DEL_ALWAYS, &err);
+					if(err!= OS_NO_ERR)
+						printf("333Del P2PAudioPlaybackCmpSemEvt fail = %d\n", err);
+	    	        DEBUG_P2P("Fileplaying= %d ,Remote_play= %d \n",Fileplaying,Remote_play);
+	        	    DEBUG_P2P("DELETE P2P PLAYFILE TASK.\n");
+                    if(OS_NO_ERR !=  OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY))
+                        DEBUG_P2P("OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+                
+                    OSFlagPend(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_PLAY_FINISH, OS_FLAG_WAIT_CLR_ALL|OS_FLAG_CONSUME, OS_IPC_WAIT_FOREVER, &err);
+                    DEBUG_P2P("pend FLAGSYS_RDYSTAT_PLAY_FINISH.\n");
+                    
+                    if(OS_NO_ERR !=  OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY))
+                        DEBUG_P2P("OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+
+		            Fileplaying=0;
+		            Remote_play=0;
+					search_dir_start.YMD=0;
+					search_dir_start.HMS=0;
+					search_dir_end.YMD=0;
+					search_dir_end.HMS=0;
+	    	     }    
+				//gFirstConnect=0;
+			}	
+		for (i = 0; i < MAX_AV_CH; i++)
+			uiSetP2PImageLevel(i,0);
+		}
+	}
+	
+	if(gClientInfo[SID].bShowInfo)
+	{
+		char *mode[3] = {"P2P", "RLY", "LAN"};
+		// print session information(not a must)
+		DEBUG_P2P("Client Info IP[%s:%d] Mode[%s] VER[%X] NAT_Type[%d] isSecure[%d]\n", Sinfo.RemoteIP, Sinfo.RemotePort, mode[(int)Sinfo.Mode], Sinfo.IOTCVersion, Sinfo.NatType, Sinfo.isSecure);
+		gClientInfo[SID].bShowInfo = 0;
+	}
+	
+	return ret;
+}
+
+#if APP_KEEP_ALIVE
+int Clear_Session_Status(int SID) //20160509 Sean : Check APP is Alive or not.
+{
+    struct st_SInfo Sinfo;
+    int ret;
+    int i;
+    u8 err;
+    u8 error;
+
+    if(gClientInfo[SID].bP2PConnected == 0)
+    {
+        return -1;
+    }
+	DEBUG_P2P("Check Session Alive Fail, Clear Session Status.\n");
+	APPConnectIcon = 0;
+    if(gClientInfo[SID].bEnableSpeaker>0)
+    {
+        Kill_Task_Speaker(SID);
+    }
+    client_p2pdisconnected(SID);
+    /*Close remote playback task.*/
+    if(gClientInfo[SID].playBackCh!=0)
+    {
+        avServStop(gClientInfo[SID].avChannel);
+        P2PPlaybackVideoStop=1;
+        unregedit_client_from_video(SID);
+        gClientInfo[SID].bStopPlayBack = 1;
+        gClientInfo[SID].bPausePlayBack = 0;
+        P2PEnableplaybackStreaming--;
+        DEBUG_P2P("P2PEnableplaybackStreaming5555=%d\n",P2PEnableplaybackStreaming);
+        P2PEnableplaybackStreaming=0;
+        OSSemSet(P2PVideoPlaybackCmpSemEvt, 0, &err);
+        OSSemSet(P2PAudioPlaybackCmpSemEvt, 0, &err);
+        gClientInfo[SID].playBackCh=0;
+        DEBUG_P2P("Fileplaying= %d ,Remote_play= %d \n",Fileplaying,Remote_play);
+        DEBUG_P2P("DELETE P2P PLAYFILE TASK.\n");
+        if(OS_NO_ERR !=  OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY))
+            DEBUG_P2P("OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+
+        OSFlagPend(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_PLAY_FINISH, OS_FLAG_WAIT_CLR_ALL|OS_FLAG_CONSUME, OS_IPC_WAIT_FOREVER, &err);
+        DEBUG_P2P("pend FLAGSYS_RDYSTAT_PLAY_FINISH.\n");
+
+        if(OS_NO_ERR !=  OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY))
+            DEBUG_P2P("OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+        /*
+        error=OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY);
+        if(error!=OS_NO_ERR)
+        	DEBUG_P2P("OSTaskDel error : %d\n",error);
+        */
+        Fileplaying=0;
+        Remote_play=0;
+    }
+
+    //for check device connect timeout by aher 2012/12/21
+    if(gOnlineNum<=0)
+    {
+        if(gFirstConnect)
+        {
+            if(gClientInfo[SID].bEnableSpeaker>0)
+            {
+                Kill_Task_Speaker(SID);
+            }
+            /*Close remote playback task.*/
+            if((Fileplaying)&&(Remote_play==1))
+            {
+                P2PPlaybackVideoStop=1;
+                unregedit_client_from_video(SID);
+                gClientInfo[SID].bStopPlayBack = 1;
+                gClientInfo[SID].bPausePlayBack = 0;
+                P2PEnableplaybackStreaming=0;
+                OSSemSet(P2PVideoPlaybackCmpSemEvt, 0, &err);
+                OSSemSet(P2PAudioPlaybackCmpSemEvt, 0, &err);
+                DEBUG_P2P("Fileplaying= %d ,Remote_play= %d \n",Fileplaying,Remote_play);
+                DEBUG_P2P("DELETE P2P PLAYFILE TASK.\n");
+                if(OS_NO_ERR !=  OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY))
+                    DEBUG_P2P("OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+
+                OSFlagPend(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_PLAY_FINISH, OS_FLAG_WAIT_CLR_ALL|OS_FLAG_CONSUME, OS_IPC_WAIT_FOREVER, &err);
+                DEBUG_P2P("pend FLAGSYS_RDYSTAT_PLAY_FINISH.\n");
+
+                if(OS_NO_ERR !=  OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY))
+                    DEBUG_P2P("OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+                /*
+                error=OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY);
+                if(error!=OS_NO_ERR)
+                		DEBUG_P2P("OSTaskDel error : %d\n",error);
+                */
+                Fileplaying=0;
+                Remote_play=0;
+                search_dir_start.YMD=0;
+                search_dir_start.HMS=0;
+                search_dir_end.YMD=0;
+                search_dir_end.HMS=0;
+            }
+            //gFirstConnect=0;
+        }
+        for (i = 0; i < MAX_AV_CH; i++)
+            uiSetP2PImageLevel(i,0);
+    }
+
+    return 0;
+}
+#endif
+
+void ClearP2PConnection()
+{
+	int i;
+	u8 err;
+	DEBUG_P2P("All device connection timeout.\n");
+	if(gOnlineNum<=0)
+	{
+		/*Reset the counter of remote playback*/
+		if(Fileplaying&&Remote_play)
+		{
+		    if(OS_NO_ERR !=  OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY))
+                DEBUG_P2P("OSTaskSuspend(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+                
+            OSFlagPend(gSysReadyFlagGrp, FLAGSYS_RDYSTAT_PLAY_FINISH, OS_FLAG_WAIT_CLR_ALL|OS_FLAG_CONSUME, OS_IPC_WAIT_FOREVER, &err);
+            DEBUG_P2P("pend FLAGSYS_RDYSTAT_PLAY_FINISH.\n");
+                            
+            if(OS_NO_ERR !=  OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY))
+                DEBUG_P2P("OSTaskDel(P2P_PLAYFILE_TASK_PRIORITY) error!!\n");
+
+			Fileplaying=0;
+	        Remote_play=0;
+		}	
+		gOnlineNum=0;
+		gFirstConnect=0;
+		videoquality=2;
+		for (i = 0; i < MAX_AV_CH; i++)
+		{
+			P2PEnableStreaming[i]=0;
+			if(gClientInfo[i].bEnableSpeaker>0)
+				Kill_Task_Speaker(i);	
+		}	
+	}
+	
+}
+void SendAudioFrameData(int SID, u32 time, int size, char *buf)
+{
+	FRAMEINFO_t frameInfo;
+	int ret;
+    if(size == 0) return; //check with Lucian
+	if(gClientInfo[SID].bEnableAudio == 0) return;
+	memset(&frameInfo, 0, sizeof(FRAMEINFO_t));
+	frameInfo.codec_id = MEDIA_CODEC_AUDIO_PCM;
+	frameInfo.flags = (AUDIO_SAMPLE_16K << 2) | (AUDIO_DATABITS_8 << 1) | AUDIO_CHANNEL_MONO;
+	frameInfo.timestamp = time;	
+
+	ret = avSendAudioData(gClientInfo[SID].avChannel, buf, size, &frameInfo, sizeof(FRAMEINFO_t));
+
+    if(ret < 0)
+	{
+		DEBUG_P2P("avSendAudioData error [%d] SID[%d] avIndex[%d]\n", ret, SID, gClientInfo[SID].avChannel);
+		unregedit_client_from_audio(SID);
+		ResetALL();
+	}
+}
+
+void SendVideoFrameData(int SID, u32 time, u32 flag, int size, char *buf)
+{
+	FRAMEINFO_t frameInfo;
+	int ret;
+
+	#if 1	//Show Frame Data size.
+	if(Sean_Frame_data_size)
+	{
+		if(flag)
+			printf("\x1B[91m%d\x1B[0m\n",size);
+		else
+			printf("\x1B[96m%d\x1B[0m\n",size);
+	}
+	#else
+	//printf("\x1B[91m%d\x1B[0m\n",time);
+	#endif
+	
+    if(size == 0) 
+    {
+        return; //check with Lucian
+    }
+	if(gClientInfo[SID].bEnableVideo == 0) return;
+	memset(&frameInfo, 0, sizeof(FRAMEINFO_t));
+    #if(VIDEO_CODEC_OPTION == MPEG4_CODEC)
+	frameInfo.codec_id = MEDIA_CODEC_VIDEO_MPEG4;
+    #elif(VIDEO_CODEC_OPTION == H264_CODEC)
+    frameInfo.codec_id = MEDIA_CODEC_VIDEO_H264;
+    #endif
+
+
+    if(flag)
+    	frameInfo.flags = IPC_FRAME_FLAG_IFRAME;
+    else
+        frameInfo.flags = IPC_FRAME_FLAG_PBFRAME;
+
+    if(gOnlineNum > MAX_CLIENT)
+		frameInfo.onlineNum = MAX_CLIENT;
+    else
+		frameInfo.onlineNum = gOnlineNum;
+	frameInfo.timestamp = time;	
+
+	ret = avSendFrameData(gClientInfo[SID].avChannel, buf, size, &frameInfo, sizeof(FRAMEINFO_t));    
+	//if(flag)
+	//	ret = avSendFrameData(gClientInfo[SID].avChannel, buf, size, &frameInfo, sizeof(FRAMEINFO_t));  
+	if(ret < 0)
+	{
+		DEBUG_P2P("avSendFrameData error [%d] SID[%d] avIndex[%d]\n", ret, SID, gClientInfo[SID].avChannel);
+		unregedit_client_from_video(SID);
+		//ResetALL();
+	}
+}
+
+void IOTC_cmd_task(void *pdata)
+{
+	int ch;
+	int i;
+	int ret;
+	char IOCtrlBuf[MAX_BUF_SIZE];
+	
+	while(1)
+	{
+		#if 1
+		for(ch=0; ch<MAX_AV_CH; ch++)
+		{
+			for(i=0;i<MAX_CLIENT;i++)
+			{
+				if((ret = Check_Session_Status(i)) < 0)
+				{
+					continue;
+				}
+
+				//printf("\n sid:%x avindex:%x", i, gClientInfo[i].avIndex[ch] );
+				Handle_IOCTRL_Cmd(i, gClientInfo[i].avIndex[ch], IOCtrlBuf);
+
+				if( Fileplaying && (gClientInfo[i].playBackCh!=0) )
+				{
+					Handle_IOCTRL_Cmd(i, gClientInfo[i].avChannel, IOCtrlBuf);
+				}	  
+			}
+		}
+		#endif
+		OSTimeDly(1);
+	}
+	
+	
+}
+#define P2PTX_AUDIO_TIMESHFT   4
+#if 0
+void wifi_station_restart()
+{
+    if(JOIN_DEFAULT_SSID != "")
+    {
+        MEMCPY((void *)join_cfg.ssid.ssid,JOIN_DEFAULT_SSID,STRLEN(JOIN_DEFAULT_SSID));
+        join_cfg.ssid.ssid_len=STRLEN(JOIN_DEFAULT_SSID);
+        STRCPY((void *)join_cfg.password, JOIN_DEFAULT_PSK);  
+    }
+    printf("\x1B[96mRETRY.\x1B[0m\n");
+	netmgr_wifi_join_other_async(&join_cfg);
+}
+#endif
+#if 1
+void Task_SessionHandler(void* pData)
+{	
+	extern s32 rfiu_TX_WifiPower;
+	extern int RF_Bitrate_limit_H;
+	extern int RF_Bitrate_limit;
+    extern bool g_cli_joining2;
+    
+    typedef struct st_wifi_sta_join_cfg
+    {
+        struct cfg_80211_ssid   ssid;
+        u8                      password[64];
+    }wifi_sta_join_cfg;
+    
+    wifi_sta_join_cfg join_cfg;
+    u16 video_value[MAX_AV_CH]={0};
+    //u16 video_value_max[MAX_AV_CH]={0};
+    u16 audio_value[MAX_AV_CH]={0};
+    //u16 audio_value_max[MAX_AV_CH]={0};
+    u32 TimeShift[MAX_AV_CH]={0};
+    unsigned int t1[MAX_AV_CH];
+    unsigned int t2[MAX_AV_CH];
+    u8 audio_loss[MAX_AV_CH]={0};
+    int i, ch=0, err_cnt=0;
+    int ret;
+    int SyncTime;
+    unsigned int dt;
+    int DlyFlag,RunCount;
+	INT8U err;
+	unsigned int current_time, WifiSet_time=0, WifiSet_time2=0;
+	u8	scan_err_cnt=0;
+	u8	empty_cnt=0;
+    static u8 notify_Ap_first_Conn = 1;
+	int	Get_IP_err_cnt=0, enter_cnt=0;
+	#if (OS_CRITICAL_METHOD == 3)
+	unsigned int  cpu_sr = 0;
+	#endif
+    //---------------------------//
+    gP2PStatus=0;
+    timerCountRead(guiRFTimerID, &t1[0]);
+    for(i=0;i<MAX_AV_CH;i++)
+    {
+        t1[i]=t1[0];
+        TimeShift[i]=0;
+    }
+    RunCount=0;
+    IOTC_Get_Login_Info(&gP2PStatus);
+
+    DEBUG_RED("READ LIGHT STATUS:%s\n",
+            (iconflag[UI_MENU_SETIDX_AP_SCONFIG_DETECT] == UI_BOOT_IN_AP_MODE)?"AP MODE":"NORMAL MODE");
+    
+	//OSFlagPend(gpiNetStatusFlagGrp, FLAGGPI_LWIP_IP_READY, OS_FLAG_WAIT_SET_ANY, OS_IPC_WAIT_FOREVER, &err);
+    while(1)
+    {         
+        DlyFlag=1;  
+
+		//if(WiFi_Mode && !Enter_Wifi_Scan)	//Make sure Device Enter Scan Mode.
+		//{
+		//	scan_err_cnt++;
+		//	if(scan_err_cnt > 100)
+		//	{
+		//		scan_err_cnt=0;
+		//		netmgr_wifi_scan_async(0xff, NULL, 0);
+		//	}
+		//}
+
+		if(WiFi_Mode && !Get_IP)	//Sean: Check IP ready or not.
+		{
+			Get_IP_err_cnt++;
+			if(Get_IP_err_cnt > 500)
+			{
+				Get_IP_err_cnt = 0;
+				DEBUG_P2P("STA recover\n");
+		        ssv6xxx_wifi_sta_recover();
+		        OSTimeDly(40);
+		        netmgr_wifi_scan_async(0xff, NULL, 0);
+	        }
+        }
+
+
+
+		if(Enter_Wifi_Connect)
+		{
+		    if(WifiSet_time == 0)
+				WifiSet_time=OSTimeGet();
+			if(WifiSet_time2 == 0)
+				WifiSet_time2=OSTimeGet();
+			current_time=OSTimeGet();
+
+			if(Enter_Wifi_Connect == 2)
+			{
+				enter_cnt++;
+				if(enter_cnt > 200)
+				{
+					Enter_Wifi_Connect = 1;
+					enter_cnt = 0;
+		            //uiSet_Light_Cnt(3, 5); //flash light 1 times
+					//DEBUG_P2P("Enter STA mode.\n");
+
+					//if(!g_cli_joining2)
+					{
+						if(JOIN_DEFAULT_SSID != "")
+		                {
+		                printf("\x1B[96mJOIN_DEFAULT_SSID:%s, JOIN_DEFAULT_PSK:%s\x1B[0m\n",JOIN_DEFAULT_SSID,JOIN_DEFAULT_PSK);
+		                    MEMCPY((void *)join_cfg.ssid.ssid,JOIN_DEFAULT_SSID,STRLEN(JOIN_DEFAULT_SSID));
+		                    join_cfg.ssid.ssid_len=STRLEN(JOIN_DEFAULT_SSID);
+		                    STRCPY((void *)join_cfg.password, JOIN_DEFAULT_PSK);  
+		                }
+
+						if(Get_IP == 0)
+						{
+							netmgr_wifi_switch_async(0, NULL, &join_cfg);	//STA mode
+							OSTimeDly(20);
+    						netmgr_wifi_join_other_async(&join_cfg);
+						}
+
+                        DEBUG_RED("Enter_Wifi_Connect= 2, SET LIGHT FORCE ON\n" );
+						iconflag[UI_MENU_SETIDX_NIGHT_LIGHT] = UI_MENU_SETIDX_LIGHT_ON;
+                        iconflag[UI_MENU_SETIDX_AP_SCONFIG_DETECT] = UI_BOOT_IN_AP_MODE;
+
+					}
+				}
+			}
+			
+			if(((current_time-WifiSet_time)>2400) || (gFlagLoginOK == 1))//120 sec
+			{
+				
+				ret = netmgr_wifi_check_sta_connected();
+				if(!ret)	//Wifi Connect FAIL, Back to AP mode.
+				{
+				    WifiSet_time = 0;
+				    WifiSet_time2 = 0;
+					DEBUG_RED("Enter SCONFIG mode.\n");
+					memset(JOIN_DEFAULT_SSID, 0, sizeof(JOIN_DEFAULT_SSID));
+					memset(JOIN_DEFAULT_PSK, 0, sizeof(JOIN_DEFAULT_PSK));
+					
+					Save_UI_Setting();
+					//Beep.
+					//APmode_default();
+					SCONFIGmode_default();
+				}
+				else
+				{
+					DEBUG_P2P("Enter STA mode.\n");
+				}
+				Enter_Wifi_Connect = 0;
+			}
+		}
+
+        if((Get_IP) && (notify_Ap_first_Conn ) && 
+                    (iconflag[UI_MENU_SETIDX_AP_SCONFIG_DETECT] == UI_BOOT_IN_AP_MODE))
+        {
+            notify_Ap_first_Conn =0;
+            uiSet_Light_Cnt(4, 5); //flash light 3 times
+            DEBUG_RED("SET UI_MENU_SETIDX_LIGHT_OFF.\n");
+            iconflag[UI_MENU_SETIDX_AP_SCONFIG_DETECT] = UI_BOOT_IN_NORMAL;
+            iconflag[UI_MENU_SETIDX_NIGHT_LIGHT] = UI_MENU_SETIDX_LIGHT_OFF;
+            Save_UI_Setting();
+                DEBUG_RED("READ LIGHT STATUS:%s\n",
+            (iconflag[UI_MENU_SETIDX_AP_SCONFIG_DETECT] == UI_BOOT_IN_AP_MODE)?"AP MODE":"NORMAL MODE");
+        }
+
+		if(Force_RESET_TUTK)
+		{
+			Force_RESET_TUTK = 0;
+			ResetALL();
+		}
+        
+        //------ Streaming video payload------//            
+        if(1)//((audio_value[ch] == 0) || (P2PAudioPresentTime[ch] >= P2PVideoPresentTime[ch])) 
+        { 
+            //video_value[ch] = OSSemAccept(P2PVideoCmpSemEvt[ch]);   
+            if(P2PEnableStreaming[0])
+            {
+                if(iisSounBufMngWriteIdx < P2PAudioBufReadIdx[ch])
+            		audio_value[ch] = ((iisSounBufMngWriteIdx + IIS_BUF_NUM) - P2PAudioBufReadIdx[ch]);
+            	else
+                    audio_value[ch] = iisSounBufMngWriteIdx - P2PAudioBufReadIdx[ch];
+                
+                if(VideoBufMngWriteIdx < P2PVideoBufReadIdx[ch])
+            		video_value[ch] = ((VideoBufMngWriteIdx + VIDEO_BUF_NUM) - P2PVideoBufReadIdx[ch]);
+            	else
+                    video_value[ch] = VideoBufMngWriteIdx - P2PVideoBufReadIdx[ch];
+                //if(audio_value[ch]>1)
+//                    DEBUG_YELLOW("== 5555 total %d, IIS:%d, P2P %d==\n",audio_value[ch],iisSounBufMngWriteIdx,P2PAudioBufReadIdx[ch]);
+                audio_loss[ch] = audio_value[ch];
+            }
+            else
+            {
+                video_value[ch] = 0;
+                audio_value[ch] = 0;
+            }
+            if (video_value[ch] > 0)
+            {   
+                //DEBUG_P2P("P2PVideoCmpSemEvt[%d]=%d\n", ch, P2PVideoCmpSemEvt[ch]->OSEventCnt);
+                //if(video_value_max[ch] < video_value[ch])
+                //    video_value_max[ch] = video_value[ch];
+                
+				//OS_ENTER_CRITICAL(); //Sean 20171113
+				OSSemAccept(P2PVideoCmpSemEvt[ch]);
+                P2PVideoPresentTime[ch] += (P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].time); //if use chunk time 
+				//OS_EXIT_CRITICAL();
+                //printf("\x1B[91m$\x1B[0m");
+            }
+            else
+            {
+				//printf("\x1B[96m*\x1B[0m");
+				goto JUMP;
+            }
+//            DEBUG_YELLOW("== 111 %d A:%d V:%d ==\n",audio_value[ch],P2PAudioPresentTime[ch],P2PVideoPresentTime[ch]); 
+            for(i=0;i<MAX_CLIENT;i++)
+            {
+                if((gClientInfo[i].bEnableVideo == 0))
+                {
+                    continue;
+                } 
+//                if((gClientInfo[i].avIndex[ch] == gClientInfo[i].avChannel) && (gClientInfo[i].bEnableVideo) && (video_value[ch] > 0))
+                if((gClientInfo[i].avIndex[ch] == gClientInfo[i].avChannel) && (gClientInfo[i].bEnableVideo) && (video_value[ch] > 0))
+                {      
+                    if(P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].flag && gClientInfo[i].VOLSend>=0)
+                    {      
+						//pbuf_used_num = check_pbuf_mem();	//20180102 Sean: Remember to Mark.
+						iComm_WIFI_Status();				//20180102 Sean: Update WiFi dB.
+
+                        UpdateHeader(ch, USE_MPEG_QUANTIZATION);
+						
+//                        memcpy(p2plocal_buffer, MPEG4_config, 0x1d);
+//                        memcpy_hw(p2plocal_buffer+0x1d, P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].buffer, P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].size);
+                        if(audio_value[ch] > P2PTX_AUDIO_TIMESHFT)
+                        {
+                            LinkAV_config[0x04]=0x08*(audio_value[ch]-P2PTX_AUDIO_TIMESHFT);
+                            
+                            memcpy_hw(p2plocal_buffer, LinkAV_config, 0x06);
+                            memcpy_hw(p2plocal_buffer+0x06, P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].buffer, P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].size*(audio_value[ch]-P2PTX_AUDIO_TIMESHFT));
+                            //DEBUG_YELLOW("== 111 %d %x %x==\n",Link_AV[ch],LinkAV_config[0x03],LinkAV_config[0x04]); 
+                            
+                            memcpy(p2plocal_buffer+0x06+P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].size*(audio_value[ch]-P2PTX_AUDIO_TIMESHFT), MPEG4_config, 0x1d);
+                            memcpy_hw(p2plocal_buffer+0x06+P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].size*(audio_value[ch]-P2PTX_AUDIO_TIMESHFT)+0x1d, P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].buffer, P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].size);
+
+                            SendVideoFrameData(i, P2PVideoPresentTime[ch], P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].flag, 
+                                               0x1d+0x06+P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].size+(P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].size*(audio_value[ch]-P2PTX_AUDIO_TIMESHFT)), p2plocal_buffer);                                                         		
+                            //P2PAudioBufReadIdx[ch] = (P2PAudioBufReadIdx[ch] + Link_AV[ch]) % IIS_BUF_NUM;
+//                            P2PAudioPresentTime[ch] += (P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].time);
+//                            P2PAudioBufReadIdx[ch] = (P2PAudioBufReadIdx[ch] + 1) % IIS_BUF_NUM;
+                            while(audio_value[ch] > P2PTX_AUDIO_TIMESHFT)
+                            {
+                                OSSemAccept(P2PAudioCmpSemEvt[ch]);
+                                P2PAudioPresentTime[ch] += (P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].time);
+                                P2PAudioBufReadIdx[ch] = (P2PAudioBufReadIdx[ch] + 1) % IIS_BUF_NUM;
+                                audio_value[ch] = audio_value[ch]-1;
+//                                DEBUG_YELLOW("loss %d, P2P %d\n",audio_value[ch],P2PAudioBufReadIdx[ch]);
+                            }
+                        }
+                        else
+                        {
+                            //DEBUG_YELLOW("== 333 ==\n");
+                            memcpy(p2plocal_buffer, MPEG4_config, 0x1d);
+                            memcpy_hw(p2plocal_buffer+0x1d, P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].buffer, P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].size);
+                            SendVideoFrameData(i, P2PVideoPresentTime[ch], P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].flag, 0x1d+P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].size, p2plocal_buffer);
+                        }
+                        //Wait P2P client send the Ioctl command "IOTYPE_USER_IPCAM_RECEIVE_FIRST_IFRAME"
+                        //Send the VOL pre second.
+                        gClientInfo[i].VOLSend = 1;
+                        
+                        if(gClientInfo[i].VOLSend==5)
+                            gClientInfo[i].VOLSend = 1;   
+                    }
+                    else if(gClientInfo[i].VOLSend>=1)
+                    {
+                        if(audio_value[ch] > P2PTX_AUDIO_TIMESHFT)
+                        {
+                            LinkAV_config[0x04]=0x08*(audio_value[ch]-P2PTX_AUDIO_TIMESHFT);
+                          
+                            memcpy_hw(p2plocal_buffer, LinkAV_config, 0x06);
+                            memcpy_hw(p2plocal_buffer+0x06, P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].buffer, P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].size*(audio_value[ch]-P2PTX_AUDIO_TIMESHFT));
+                            memcpy_hw(p2plocal_buffer+0x06+P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].size*(audio_value[ch]-P2PTX_AUDIO_TIMESHFT), P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].buffer, P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].size);
+
+                            SendVideoFrameData(i, P2PVideoPresentTime[ch], P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].flag, 
+                                               0x06+P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].size+(P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].size*(audio_value[ch]-P2PTX_AUDIO_TIMESHFT)), p2plocal_buffer);                                                         		
+//                            P2PAudioPresentTime[ch] += (P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].time);
+//                            P2PAudioBufReadIdx[ch] = (P2PAudioBufReadIdx[ch] + 1) % IIS_BUF_NUM;
+                            while(audio_value[ch] > P2PTX_AUDIO_TIMESHFT)
+                            {
+                                OSSemAccept(P2PAudioCmpSemEvt[ch]);
+                                P2PAudioPresentTime[ch] += (P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].time);
+                                P2PAudioBufReadIdx[ch] = (P2PAudioBufReadIdx[ch] + 1) % IIS_BUF_NUM;
+                                audio_value[ch] = audio_value[ch]-1;
+//                                DEBUG_YELLOW("loss %d, P2P %d\n",audio_value[ch],P2PAudioBufReadIdx[ch]);
+                            }
+                        }
+                        else
+                        {
+                            SendVideoFrameData(i, P2PVideoPresentTime[ch], P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].flag, P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].size, P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].buffer);
+                            //DEBUG_YELLOW("== 444 ==\n");
+                        }
+                        gClientInfo[i].VOLSend++;
+                    }
+                }
+            }
+
+            if (video_value[ch] > 0)    
+            {
+                P2PSentByteCnt += P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].size;
+                P2PVideoBufReadIdx[ch] = (P2PVideoBufReadIdx[ch] + 1) % VIDEO_BUF_NUM; 
+                //DEBUG_RED("Video(%d,%d) ",P2PVideoBufReadIdx[ch],P2PVideoPresentTime[ch]);
+
+            }
+        }
+        ///------------------- Bitstream buffer control---------------------------------//
+        /*
+        Lsk: 以Video bitstream buffer 內的index剩餘個數為偵測點,若大於 ASF_DROP_FRAME_THRESHOLD
+        則為網路速度過慢,需drop frame.
+
+        */
+        //printf("\x1B[96mCnt=%d \x1B[0m",P2PVideoCmpSemEvt[ch]->OSEventCnt);
+        if(P2PVideoCmpSemEvt[ch]->OSEventCnt > 60)
+        {
+            DEBUG_P2P("\nP2P-%d DROP Video frame Start:(%d,%d) \n",ch,P2PVideoPresentTime[ch],P2PAudioPresentTime[ch]);
+            SyncTime=0;
+            empty_cnt=0;
+            //------Video-----//
+            do 
+            {
+                video_value[ch] = OSSemAccept(P2PVideoCmpSemEvt[ch]); 
+                if (video_value[ch] > 0)
+                //if(1)
+                {
+                    //if(video_value_max[ch] < video_value[ch])
+                     //   video_value_max[ch] = video_value[ch];
+
+                    P2PVideoPresentTime[ch] += P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].time;
+                    SyncTime += P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].time;
+                    P2PVideoBufReadIdx[ch] = (P2PVideoBufReadIdx[ch] + 1) % VIDEO_BUF_NUM;                    
+                }
+                else
+                {
+                    DEBUG_P2P("Video buffer empty!\n");
+                    empty_cnt++;
+
+                    if(empty_cnt>20)
+                    	break;
+                    OSTimeDly(1);
+                }
+            } while(P2PVideoBuf[ch][P2PVideoBufReadIdx[ch]].flag != FLAG_I_VOP);
+#if 1
+            //------Audio-----//
+            DEBUG_P2P("P2P-%d DROP Audio frame Start:%d,SyncTime=%d \n",ch,P2PAudioCmpSemEvt[ch]->OSEventCnt,SyncTime);
+
+            do 
+            {
+                audio_value[ch] = OSSemAccept(P2PAudioCmpSemEvt[ch]); 
+
+                if (audio_value[ch] > 0)
+                //if (1)
+                {
+                    //if(audio_value_max[ch] < audio_value[ch])
+                    //    audio_value_max[ch] = audio_value[ch];
+
+                    P2PAudioPresentTime[ch] += P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].time; 
+                    SyncTime -= P2PAudioBuf[ch][P2PAudioBufReadIdx[ch]].time;
+                    P2PAudioBufReadIdx[ch] = (P2PAudioBufReadIdx[ch] + 1) % IIS_BUF_NUM;
+                }
+                else
+                {
+                    DEBUG_P2P("Audio buffer empty!\n");
+                    break;
+                }
+
+                if(SyncTime < 0)
+                    break;
+            }while( (P2PAudioPresentTime[ch] < P2PVideoPresentTime[ch]) );
+            //P2PAudioPresentTime[ch] = P2PVideoPresentTime[ch];
+            DEBUG_P2P("P2P-%d DROP frame End:(%d,%d)!!\n\n",ch,P2PVideoPresentTime[ch],P2PAudioPresentTime[ch]);
+#endif
+            DEBUG_P2P("P2P-%d DROP frame End:(%d)!!\n\n",ch,P2PVideoPresentTime[ch]);
+
+            sysDeadLockMonitor_Reset();
+            DlyFlag=0;
+            RunCount=0;
+            //OSTimeDly(1);
+        } 
+
+        if ( (video_value[ch] > 0) || (audio_value[ch] > 0) )
+            DlyFlag=0;
+JUMP:
+
+        if(DlyFlag)
+        {
+            RunCount=0;
+            //DEBUG_P2P("&");
+            OSTimeDly(1);
+
+        }
+        else
+        {
+            if( (RunCount & 0x03) == 0) //Lucian: release CPU power
+            {
+                //DEBUG_P2P("A=%d ",P2PAudioCmpSemEvt[0]->OSEventCnt);
+                //DEBUG_P2P("Rcnt=%d ",RunCount);
+                if(RunCount>100)
+                    sysDeadLockMonitor_Reset();
+                OSTimeDly(1);
+            }
+        }
+
+        RunCount ++;
+    }          
+}
+#endif
+/*
+20180103 Sean:
+初始連線若外網未插入則持續嘗試Login
+若已Login才移除路由器外網則進入retry檢查
+檢查過程中嘗試Reset WiFi
+check 30 次後則重啟系統
+*/
+void Task_Login(void *UID)
+{
+	INT8U err;
+	int ret = -1;
+	//int info;
+	u8	P2P_status=0;
+	//DEBUG_P2P("### Task_Login start wait get IP.......\n");
+	//OSFlagPend(gpiNetStatusFlagGrp, FLAGGPI_LWIP_IP_READY, OS_FLAG_WAIT_SET_ANY, OS_IPC_WAIT_FOREVER, &err);
+	DEBUG_P2P("### Task_Login start running[%s].......\n", gUID);
+	//ssv6xxx_set_rc_value(RC_RATEMASK, 4095); //切回b/g/n mode, 開機為b mode,距離較遠.
+	while(1)
+	{
+        if(Get_IP == 0)
+        {
+            OSTimeDly(100);//5sec
+            continue;//Don't execute IOTC_Device_Login before IP get.
+        }
+		if(!gFlagLoginOK)
+		{
+			Check_P2P_info(&gP2PStatus);
+			ret = IOTC_Device_Login((char *)gUID, NULL, NULL);
+			DEBUG_P2P("@@@ IOTC_Device_Login() ret = %d\n", ret);
+
+			if(ret == IOTC_ER_NoERROR)
+			{
+				gFlagLoginOK = 1;			
+	            DEBUG_P2P("Login P2Pserve : %d.\n",gFlagLoginOK);
+	            if(gFlagLoginOK)
+	                SendRegister();//Register the device to APN server 	
+
+	            //gFlagLoginOK = 0;
+	            gLoginFaileCnt = 1;
+	            				
+				OSTimeDly(100);
+
+	            //DEBUG_P2P("*****OSTaskSuspend(LOGIN_TASK_PRIORITY)*****\n");
+	            //OSTaskSuspend(LOGIN_TASK_PRIORITY);
+			}
+			else if(ret == IOTC_ER_LOGIN_ALREADY_CALLED)
+			{
+				gLoginFaileCnt++;
+				if(gLoginFaileCnt>10)
+				{
+					DEBUG_P2P("IOTC_ER_LOGIN_ALREADY_CALLED timeout, rebooting...\n");
+					sysForceWDTtoReboot();
+				}
+				OSTimeDly(200);	// 10sec
+			}
+			else if(ret == IOTC_ER_FAIL_SOCKET_BIND)
+			{
+				gLoginFaileCnt++;
+				if(gLoginFaileCnt>10)
+				{
+					DEBUG_P2P("IOTC_ER_FAIL_SOCKET_BIND timeout, rebooting...\n");
+					sysForceWDTtoReboot();
+				}
+				OSTimeDly(200);	// 10sec
+			}
+			else if(ret == IOTC_ER_SERVER_NOT_RESPONSE)
+			{
+				//gLoginFaileCnt++;
+				OSTimeDly(200);	// 10sec
+			}
+			else
+			{
+				gLoginFaileCnt++;
+				if(gLoginFaileCnt>10)
+				{
+					DEBUG_P2P("Task_Login timeout, rebooting...\n");
+					sysForceWDTtoReboot();
+				}
+				OSTimeDly(200);	// 10sec
+			}
+		}
+		else
+		{
+            Check_P2P_info(&gP2PStatus);
+            if(P2P_status == 0)
+            	P2P_status = gP2PStatus;
+            	
+            if(gP2PStatus < 7)
+            {
+            	gLoginFaileCnt++;
+				DEBUG_P2P("Retry P2P failed.%d\n",gLoginFaileCnt);
+				if((P2P_status == 7) && (gP2PStatus == 3))
+					Force_RESET_TUTK = 1;
+					
+            }
+            else
+            	gLoginFaileCnt = 1;	//Reset ERR cnt.
+
+            if((gLoginFaileCnt%5) == 0)
+            {
+				DEBUG_P2P("STA recover..\n");
+			    ret = netmgr_wifi_leave_async();
+			    if (ret != 0)
+			    {
+				    DEBUG_P2P("netmgr_wifi_leave failed !!\n");
+			    }
+		        ssv6xxx_wifi_sta_recover();
+		        OSTimeDly(40);
+		        wifi_start(0,false,false);	//SSV6XXX_HWM_STA
+            }
+            else if(gLoginFaileCnt > 30)
+            {
+            	DEBUG_P2P("P2P connection couldn't recovery, rebooting...\n");
+				sysForceWDTtoReboot();
+            }
+            OSTimeDly(1200); // 1min
+		}
+	}	
+}
+
+void Task_Listen(void *pdata)
+{
+	int SID;
+	INT8U err;
+	u8	ret;
+	u8  err_cnt=0, sid_keep_err=0;
+	DEBUG_P2P("Task_Listen start wait get IP.......\n");
+	//OSFlagPend(gpiNetStatusFlagGrp, FLAGGPI_LWIP_IP_READY, OS_FLAG_WAIT_SET_ANY, OS_IPC_WAIT_FOREVER, &err);
+
+	while(1)
+	{
+	    if(SID >=5)
+        {
+        	printf("Can't be Connected![SID:%d]\n", SID);
+            if(sid_keep_err++ >= 3)
+            {
+                sid_keep_err = 0;
+                Force_RESET_TUTK = 1;
+            }
+        }
+        else
+            sid_keep_err = 0;
+		DEBUG_P2P("+++IOTC_Listen calling.....\n");
+		SID = IOTC_Listen(0);
+		DEBUG_P2P("+++IOTC_Listen ret[%d].....\n", SID);
+		
+#if APP_KEEP_ALIVE
+/*==============================KEEP ALIVE==================================*/
+		switch(SID)
+		{
+			case 0:
+				RTC_Get_Time(&gKeepAliveTime0);
+			break;
+			case 1:
+				RTC_Get_Time(&gKeepAliveTime1);
+			break;
+			case 2:
+				RTC_Get_Time(&gKeepAliveTime2);
+			break;
+			case 3:
+				RTC_Get_Time(&gKeepAliveTime3);
+			break;
+			default:
+				break;
+		}
+		gFlagKeepAlive[SID] = 1;
+/*===============================KEEP ALIVE==================================*/
+#endif
+		if(SID > -1)
+		{
+            err_cnt = 0;
+			ret=IOTC_Set_Partial_Encryption(SID,1); //Sean: 20170705
+			if(ret < 0)
+				DEBUG_P2P("[ERR]: Set partial encryption = %d\n",ret);
+			DEBUG_P2P("IOTC_Listen ret SID[%d]\n", SID);
+			
+			client_p2pconnected(SID);
+			ret = AVServerStart(SID);	
+			if(ret)
+				client_p2pdisconnected(SID);
+		}
+        else if(SID == IOTC_ER_EXCEED_MAX_SESSION)
+		{
+			DEBUG_P2P("Listen fail : IOTC_ER_EXCEED_MAX_SESSION.\n");
+			OSTimeDly(200);
+		}
+		else
+		{
+            err_cnt++;
+            if(err_cnt > 20)
+            {
+                err_cnt = 0;
+                Force_RESET_TUTK = 1;
+            }
+		}
+	}	
+}
+
+void init_AVInfo()
+{
+	int i;
+	for(i=0;i<MAX_CLIENT;i++)
+		memset(&gClientInfo[i], 0, sizeof(AV_Client));        
+}
+
+void ResetALL()
+{
+	int ret = -1;
+	u8 	i;
+	
+	printf("\x1B[96m Reset TUTK. \x1B[0m\n");
+	IOTC_DeInitialize();
+	OSTaskDel(LISTEN_TASK_PRIORITY);
+	OSTaskDel(LOGIN_TASK_PRIORITY);
+	
+	OSTimeDly(40);
+	
+	IOTC_Set_Max_Session_Number(MAX_CLIENT);
+	// use which Master base on location, port 0 means to get a random port
+	ret = IOTC_Initialize2(0);
+	DEBUG_P2P("### IOTC_Initialize2() ret = %d\n", ret);
+	if(ret != IOTC_ER_NoERROR)
+	{
+		DEBUG_P2P("### IOTC_Initialize2 failed process exit...!!\n");
+		return;
+	}
+	ret = avInitialize(MAX_CLIENT * MAX_AV_CH);/*(MAX_CLIENT * MAX_AV_CH)*/
+	DEBUG_P2P("avInitialize ret[%d]\n", ret);
+
+	Reset_P2P_Session();
+	
+	gOnlineNum = 0;
+	gFirstConnect=0;
+	videoquality=2;
+	for (i = 0; i < MAX_AV_CH; i++)
+	{
+		P2PEnableStreaming[i]=0;
+		if(gClientInfo[i].bEnableSpeaker>0)
+			Kill_Task_Speaker(i);	
+	}	
+    iComm_speak = 0;
+    gFlagLoginOK = 0;
+	if(OSTaskCreate(Task_Listen, (void *)0, LISTEN_TASK_STACK, LISTEN_TASK_PRIORITY) != OS_NO_ERR)
+	{
+		DEBUG_P2P("OSTaskCreate Task_Listen failed[%d]!\n", LISTEN_TASK_PRIORITY);
+		return;
+	}
+	
+	if(OSTaskCreate(Task_Login, (void *)0, LOGIN_TASK_STACK, LOGIN_TASK_PRIORITY) != OS_NO_ERR)
+	{
+		DEBUG_P2P("OSTaskCreate Task_Login failed!\n");
+		return;
+	}
+
+}
+
+void tutkSampleInit()
+{
+	int ret = -1;
+	unsigned long pnVersion;
+	INT8U err;
+	
+/*Set the device function*/
+/*bit 18 Disable/Enable Gatewaybox*/
+/*bit 19 Disable/Enable TimeZone shfit on APP side.*/
+#if REMOTE_FILE_PLAYBACK
+	SERVTYPE_STREAM_SERVER=38880;	//5920//5984//6112 	// Disable WiFi setting,Format SDCard function,Record setting function. 			aher 2013/06/04
+#else
+	SERVTYPE_STREAM_SERVER=38904; 	// Disable WiFi setting,Format SDCard function,Record setting,File playback function.
+#endif	
+
+#if NIC_TIMEZONE_DISABLE
+	SERVTYPE_STREAM_SERVER=SERVTYPE_STREAM_SERVER|0x20000;
+#endif	
+
+ 	gpiNetStatusFlagGrp = OSFlagCreate(0x00000000, &err);
+
+	init_AVInfo();
+	
+	DEBUG_P2P("tutkSampleInit entry...\n");
+	IOTC_Get_Version(&pnVersion);
+	DEBUG_P2P("AVAPIver=%x,IOTCver=%x\n",avGetAVApiVer(),pnVersion);
+    gUID = uiP2PID;
+    DEBUG_P2P("gUID = %s\n",gUID);    
+ 		
+    Init_P2P_Session();   
+	IOTC_Set_Max_Session_Number(MAX_CLIENT);
+	// use which Master base on location, port 0 means to get a random port
+	ret = IOTC_Initialize2(0);
+	DEBUG_P2P("### IOTC_Initialize2() ret = %d\n", ret);
+	if(ret != IOTC_ER_NoERROR)
+	{
+		DEBUG_P2P("### IOTC_Initialize2 failed process exit...!!\n");
+		return;
+	}
+	ret = avInitialize(MAX_CLIENT * 2);/*(MAX_CLIENT * MAX_AV_CH)*/
+	//ret = avInitialize((MAX_CLIENT * MAX_AV_CH)+1);/*(MAX_CLIENT * MAX_AV_CH)+ File playback*/
+	DEBUG_P2P("avInitialize ret[%d]\n", ret);
+	
+	if(OSTaskCreate(IOTC_cmd_task, (void *)0, IOTC_CMD_TASK_STACK, IOTC_CMD_TASK_PRIORITY) != OS_NO_ERR)
+	{
+		DEBUG_P2P("OSTaskCreate IOTC_cmd_task failed[%d]!\n", IOTC_CMD_TASK_PRIORITY);
+		return;
+	}
+	if(OSTaskCreate(Task_SessionHandler, (void *)0, SESSION_TASK_STACK, SESSION_TASK_PRIORITY) != OS_NO_ERR)
+	{
+		DEBUG_P2P("OSTaskCreate Task_SessionHandler failed[%d]!\n", SESSION_TASK_PRIORITY);
+		return;
+	}
+	
+	if(OSTaskCreate(Task_Listen, (void *)0, LISTEN_TASK_STACK, LISTEN_TASK_PRIORITY) != OS_NO_ERR)
+	{
+		DEBUG_P2P("OSTaskCreate Task_Listen failed[%d]!\n", LISTEN_TASK_PRIORITY);
+		return;
+	}
+
+	if(OSTaskCreate(Task_Login, (void *)0, LOGIN_TASK_STACK, LOGIN_TASK_PRIORITY) != OS_NO_ERR)
+	{
+		DEBUG_P2P("OSTaskCreate Task_Login failed!\n");
+		return;
+	}
+	gPushMsgTime=0;
+	DEBUG_P2P("2 tutkSampleInit OK!\n");
+ 
+}
+
+#else
+#include "lwipapi.h"
+#include "encrptyapi.h"
+
+u8 Fileplaying=0;
+INT8U Sean_test=0;
+OS_EVENT* P2PAudioPlaybackCmpSemEvt;
+OS_EVENT* P2PVideoPlaybackCmpSemEvt;
+
+void LoadP2PPassword(char *password){}
+//u32_t inet_addr(const char *cp){}
+//char * inet_ntoa(struct in_addr addr){}
+#define INADDR_NONE         ((u32_t)0xffffffff)  /* 255.255.255.255 */
+
+u32_t inet_addr(const char *cp)
+{
+  struct in_addr val;
+
+  if (inet_aton2(cp, &val)) {
+    return (val.s_addr);
+  }
+  return (INADDR_NONE);
+}
+
+/*
+ * Check whether "cp" is a valid ascii representation
+ * of an Internet address and convert to a binary address.
+ * Returns 1 if the address is valid, 0 if not.
+ * This replaces inet_addr, the return value from which
+ * cannot distinguish between failure and a local broadcast address.
+ */
+int inet_aton2(const char *cp, struct in_addr *addr)
+{
+  u32_t val;
+  int base, n, c;
+  u32_t parts[4];
+  u32_t *pp = parts;
+
+  c = *cp;
+  for (;;) {
+    /*
+     * Collect number up to ``.''.
+     * Values are specified as for C:
+     * 0x=hex, 0=octal, 1-9=decimal.
+     */
+    if (!isdigit(c))
+      return (0);
+    val = 0;
+    base = 10;
+    if (c == '0') {
+      c = *++cp;
+      if (c == 'x' || c == 'X') {
+        base = 16;
+        c = *++cp;
+      } else
+        base = 8;
+    }
+    for (;;) {
+      if (isdigit(c)) {
+        val = (val * base) + (int)(c - '0');
+        c = *++cp;
+      } else if (base == 16 && isxdigit(c)) {
+        val = (val << 4) | (int)(c + 10 - (islower(c) ? 'a' : 'A'));
+        c = *++cp;
+      } else
+        break;
+    }
+    if (c == '.') {
+      /*
+       * Internet format:
+       *  a.b.c.d
+       *  a.b.c   (with c treated as 16 bits)
+       *  a.b (with b treated as 24 bits)
+       */
+      if (pp >= parts + 3)
+        return (0);
+      *pp++ = val;
+      c = *++cp;
+    } else
+      break;
+  }
+  /*
+   * Check for trailing characters.
+   */
+  if (c != '\0' && (!isprint(c) || !isspace(c)))
+    return (0);
+  /*
+   * Concoct the address according to
+   * the number of parts specified.
+   */
+  n = pp - parts + 1;
+  switch (n) {
+
+  case 0:
+    return (0);       /* initial nondigit */
+
+  case 1:             /* a -- 32 bits */
+    break;
+
+  case 2:             /* a.b -- 8.24 bits */
+    if (val > 0xffffff)
+      return (0);
+    val |= parts[0] << 24;
+    break;
+
+  case 3:             /* a.b.c -- 8.8.16 bits */
+    if (val > 0xffff)
+      return (0);
+    val |= (parts[0] << 24) | (parts[1] << 16);
+    break;
+
+  case 4:             /* a.b.c.d -- 8.8.8.8 bits */
+    if (val > 0xff)
+      return (0);
+    val |= (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8);
+    break;
+  }
+  if (addr)
+    addr->s_addr = htonl(val);
+  return (1);
+}
+
+/* Convert numeric IP address into decimal dotted ASCII representation.
+ * returns ptr to static buffer; not reentrant!
+ */
+char * inet_ntoa(struct in_addr addr)
+{
+  static char str[16];
+  u32_t s_addr = addr.s_addr;
+  char inv[3];
+  char *rp;
+  u8_t *ap;
+  u8_t rem;
+  u8_t n;
+  u8_t i;
+
+  rp = str;
+  ap = (u8_t *)&s_addr;
+  for(n = 0; n < 4; n++) {
+    i = 0;
+    do {
+      rem = *ap % (u8_t)10;
+      *ap /= (u8_t)10;
+      inv[i++] = '0' + rem;
+    } while(*ap);
+    while(i--)
+      *rp++ = inv[i];
+    *rp++ = '.';
+    ap++;
+  }
+  *--rp = 0;
+  return str;
+}
+
+
+
+#endif

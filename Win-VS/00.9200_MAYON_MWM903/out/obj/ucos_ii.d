@@ -1,0 +1,14 @@
+.\out\obj\ucos_ii.o: ucos_ii\src\UCOS_II.C
+.\out\obj\ucos_ii.o: .\inc\osapi.h
+.\out\obj\ucos_ii.o: .\inc\.\os\os_cpu.h
+.\out\obj\ucos_ii.o: .\inc\.\os\os_cfg.h
+.\out\obj\ucos_ii.o: .\inc\.\os\ucos_ii.h
+.\out\obj\ucos_ii.o: .\ucos_ii\inc\os_flag.c
+.\out\obj\ucos_ii.o: .\ucos_ii\inc\os_mbox.c
+.\out\obj\ucos_ii.o: .\ucos_ii\inc\os_mem.c
+.\out\obj\ucos_ii.o: .\ucos_ii\inc\os_mutex.c
+.\out\obj\ucos_ii.o: .\ucos_ii\inc\os_q.c
+.\out\obj\ucos_ii.o: .\ucos_ii\inc\os_sem.c
+.\out\obj\ucos_ii.o: .\ucos_ii\inc\os_task.c
+.\out\obj\ucos_ii.o: .\ucos_ii\inc\os_time.c
+.\out\obj\ucos_ii.o: .\ucos_ii\inc\os_dbg.c

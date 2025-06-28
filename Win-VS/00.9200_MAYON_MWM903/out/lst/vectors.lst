@@ -1,0 +1,325 @@
+
+
+
+ARM Macro Assembler    Page 1 
+
+
+    1 00000000         ;
+    2 00000000         ;Copyright (c) 2008 Mars Semiconductor Corp.
+    3 00000000         ;
+    4 00000000         ;Module Name:
+    5 00000000         ;
+    6 00000000         ; vectors.s
+    7 00000000         ;
+    8 00000000         ;Abstract:
+    9 00000000         ;
+   10 00000000         ;    The interrupt vectors.
+   11 00000000         ;
+   12 00000000         ;Environment:
+   13 00000000         ;
+   14 00000000         ;    ARM RealView Developer Suite
+   15 00000000         ;
+   16 00000000         ;Revision History:
+   17 00000000         ; 
+   18 00000000         ; 2005/08/26 David Tsai Create 
+   19 00000000         ;
+   20 00000000         
+   21 00000000                 PRESERVE8
+   22 00000000         
+   23 00000000                 AREA             Vect, CODE, READONLY
+   24 00000000         
+   25 00000000         ; A vector table and dummy exception handlers
+   26 00000000         
+   27 00000000         
+   28 00000000         ; *****************
+   29 00000000         ; Exception Vectors
+   30 00000000         ; *****************
+   31 00000000         
+   32 00000000         ; Note: LDR PC instructions are used here, though branch
+                        (B) instructions
+   33 00000000         ; could also be used, unless the ROM is at an address >3
+                       2MB.
+   34 00000000         
+   35 00000000                 ENTRY
+   36 00000000                 EXPORT           START_0
+   37 00000000         START_0 FUNCTION
+   38 00000000         
+   39 00000000 E59FF018        LDR              PC, Reset_Addr
+   40 00000004 E59FF018        LDR              PC, Undefined_Addr
+   41 00000008 E59FF018        LDR              PC, SWI_Addr
+   42 0000000C E59FF018        LDR              PC, Prefetch_Addr
+   43 00000010 E59FF018        LDR              PC, Abort_Addr
+   44 00000014 E1A00000        NOP                          ; Reserved vector
+   45 00000018 E59FF014        LDR              PC, IRQ_Addr
+   46 0000001C E59FF014        LDR              PC, FIQ_Addr
+   47 00000020         
+   48 00000020                 IMPORT           Reset_Handler ; In init.s
+   49 00000020         ;//IMPORT  IRQ_Handler             ; In int_handler.c
+   50 00000020         ;//IMPORT  FIQ_Handler             ; In ini_handler.c
+   51 00000020                 IMPORT           UCOS_IRQHandler ; In os_cpu_a.s
+                                                            
+   52 00000020                 IMPORT           UCOS_FIQHandler ; In os_cpu_a.s
+                                                            
+   53 00000020         ;        IMPORT  inc_clock   [WEAK]      ;
+   54 00000020         
+   55 00000020 00000000 
+
+
+
+ARM Macro Assembler    Page 2 
+
+
+                       Reset_Addr
+                               DCD              Reset_Handler
+   56 00000024 00000000 
+                       Undefined_Addr
+                               DCD              Undefined_Handler
+   57 00000028 00000000 
+                       SWI_Addr
+                               DCD              SWI_Handler
+   58 0000002C 00000000 
+                       Prefetch_Addr
+                               DCD              Prefetch_Handler
+   59 00000030 00000000 
+                       Abort_Addr
+                               DCD              Abort_Handler
+   60 00000034         ; cytsai: modify for uCOS-II interrupt handling
+   61 00000034         ;IRQ_Addr        DCD     IRQ_Handler
+   62 00000034         ;FIQ_Addr        DCD     FIQ_Handler
+   63 00000034 00000000 
+                       IRQ_Addr
+                               DCD              UCOS_IRQHandler
+   64 00000038 00000000 
+                       FIQ_Addr
+                               DCD              UCOS_FIQHandler
+   65 0000003C         
+   66 0000003C         ; ************************
+   67 0000003C         ; Exception Handlers
+   68 0000003C         ; ************************
+   69 0000003C         
+   70 0000003C                 IMPORT           marsUndefineHandler
+   71 0000003C                 IMPORT           marsSWIHandler
+   72 0000003C                 IMPORT           marsPrefetchHandler
+   73 0000003C                 IMPORT           marsAbortHandler
+   74 0000003C         
+   75 0000003C         ; The following dummy handlers do not do anything useful
+                        in this example.
+   76 0000003C         ; They are set up here for completeness.
+   77 0000003C         
+   78 0000003C         Undefined_Handler
+   79 0000003C EBFFFFFE        bl               marsUndefineHandler
+   80 00000040 EAFFFFFD        B                Undefined_Handler
+   81 00000044         
+   82 00000044         SWI_Handler
+   83 00000044 EBFFFFFE        bl               marsSWIHandler
+   84 00000048 EAFFFFFD        B                SWI_Handler
+   85 0000004C         
+   86 0000004C         Prefetch_Handler
+   87 0000004C EBFFFFFE        bl               marsPrefetchHandler
+   88 00000050 EAFFFFFD        B                Prefetch_Handler
+   89 00000054         
+   90 00000054         Abort_Handler
+   91 00000054 EBFFFFFE        bl               marsAbortHandler
+   92 00000058 EAFFFFFD        B                Abort_Handler
+   93 0000005C         
+   94 0000005C         ;IRQ_Handler
+   95 0000005C         ;        B       IRQ_Handler
+   96 0000005C         ;FIQ_Handler
+   97 0000005C         ;        B       FIQ_Handler
+   98 0000005C         
+   99 0000005C                 END
+
+
+
+ARM Macro Assembler    Page 3 
+
+
+Command Line: --debug --xref --diag_suppress=9931 --depend=.\out\obj\vectors.d 
+-o.\out\obj\vectors.o -I.\inc -IC:\Keil_v5\ARM\RV31\INC -IC:\Keil_v5\ARM\CMSIS\
+Include --predefine="__UVISION_VERSION SETA 518" --predefine="USE_SCATTER_SYMS 
+SETA 1" --list=.\out\lst\vectors.lst board\src\vectors.s
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+Relocatable symbols
+
+Abort_Addr 00000030
+
+Symbol: Abort_Addr
+   Definitions
+      At line 59 in file board\src\vectors.s
+   Uses
+      At line 43 in file board\src\vectors.s
+Comment: Abort_Addr used once
+Abort_Handler 00000054
+
+Symbol: Abort_Handler
+   Definitions
+      At line 90 in file board\src\vectors.s
+   Uses
+      At line 59 in file board\src\vectors.s
+      At line 92 in file board\src\vectors.s
+
+FIQ_Addr 00000038
+
+Symbol: FIQ_Addr
+   Definitions
+      At line 64 in file board\src\vectors.s
+   Uses
+      At line 46 in file board\src\vectors.s
+Comment: FIQ_Addr used once
+IRQ_Addr 00000034
+
+Symbol: IRQ_Addr
+   Definitions
+      At line 63 in file board\src\vectors.s
+   Uses
+      At line 45 in file board\src\vectors.s
+Comment: IRQ_Addr used once
+Prefetch_Addr 0000002C
+
+Symbol: Prefetch_Addr
+   Definitions
+      At line 58 in file board\src\vectors.s
+   Uses
+      At line 42 in file board\src\vectors.s
+Comment: Prefetch_Addr used once
+Prefetch_Handler 0000004C
+
+Symbol: Prefetch_Handler
+   Definitions
+      At line 86 in file board\src\vectors.s
+   Uses
+      At line 58 in file board\src\vectors.s
+      At line 88 in file board\src\vectors.s
+
+Reset_Addr 00000020
+
+Symbol: Reset_Addr
+   Definitions
+      At line 55 in file board\src\vectors.s
+   Uses
+      At line 39 in file board\src\vectors.s
+Comment: Reset_Addr used once
+START_0 00000000
+
+
+
+ARM Macro Assembler    Page 2 Alphabetic symbol ordering
+Relocatable symbols
+
+
+Symbol: START_0
+   Definitions
+      At line 37 in file board\src\vectors.s
+   Uses
+      At line 36 in file board\src\vectors.s
+Comment: START_0 used once
+SWI_Addr 00000028
+
+Symbol: SWI_Addr
+   Definitions
+      At line 57 in file board\src\vectors.s
+   Uses
+      At line 41 in file board\src\vectors.s
+Comment: SWI_Addr used once
+SWI_Handler 00000044
+
+Symbol: SWI_Handler
+   Definitions
+      At line 82 in file board\src\vectors.s
+   Uses
+      At line 57 in file board\src\vectors.s
+      At line 84 in file board\src\vectors.s
+
+Undefined_Addr 00000024
+
+Symbol: Undefined_Addr
+   Definitions
+      At line 56 in file board\src\vectors.s
+   Uses
+      At line 40 in file board\src\vectors.s
+Comment: Undefined_Addr used once
+Undefined_Handler 0000003C
+
+Symbol: Undefined_Handler
+   Definitions
+      At line 78 in file board\src\vectors.s
+   Uses
+      At line 56 in file board\src\vectors.s
+      At line 80 in file board\src\vectors.s
+
+Vect 00000000
+
+Symbol: Vect
+   Definitions
+      At line 23 in file board\src\vectors.s
+   Uses
+      None
+Comment: Vect unused
+13 symbols
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+External symbols
+
+Reset_Handler 00000000
+
+Symbol: Reset_Handler
+   Definitions
+      At line 48 in file board\src\vectors.s
+   Uses
+      At line 55 in file board\src\vectors.s
+Comment: Reset_Handler used once
+UCOS_FIQHandler 00000000
+
+Symbol: UCOS_FIQHandler
+   Definitions
+      At line 52 in file board\src\vectors.s
+   Uses
+      At line 64 in file board\src\vectors.s
+Comment: UCOS_FIQHandler used once
+UCOS_IRQHandler 00000000
+
+Symbol: UCOS_IRQHandler
+   Definitions
+      At line 51 in file board\src\vectors.s
+   Uses
+      At line 63 in file board\src\vectors.s
+Comment: UCOS_IRQHandler used once
+marsAbortHandler 00000000
+
+Symbol: marsAbortHandler
+   Definitions
+      At line 73 in file board\src\vectors.s
+   Uses
+      At line 91 in file board\src\vectors.s
+Comment: marsAbortHandler used once
+marsPrefetchHandler 00000000
+
+Symbol: marsPrefetchHandler
+   Definitions
+      At line 72 in file board\src\vectors.s
+   Uses
+      At line 87 in file board\src\vectors.s
+Comment: marsPrefetchHandler used once
+marsSWIHandler 00000000
+
+Symbol: marsSWIHandler
+   Definitions
+      At line 71 in file board\src\vectors.s
+   Uses
+      At line 83 in file board\src\vectors.s
+Comment: marsSWIHandler used once
+marsUndefineHandler 00000000
+
+Symbol: marsUndefineHandler
+   Definitions
+      At line 70 in file board\src\vectors.s
+   Uses
+      At line 79 in file board\src\vectors.s
+Comment: marsUndefineHandler used once
+7 symbols
+352 symbols in table

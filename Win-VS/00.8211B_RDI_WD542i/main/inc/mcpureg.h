@@ -1,0 +1,22 @@
+
+
+//0x0000
+#define MCP_CMD_RST              0x00000001
+#define MCP_CMD_MCPYENA          0x00000002
+#define MCP_CMD_MCPYINT_EN       0x00000004
+
+#define MCP_CMD_MODE_LCPY        0x00000000
+#define MCP_CMD_MODE_BCPY        0x00000010
+#define MCP_CMD_MODE_3DES        0x00000020
+#define MCP_CMD_MODE_FATS        0x00000030
+
+//0x0004
+#define MCP_INT_STAT_MCPYFIN     0x00000001
+#define MCP2_INT_STAT_MCPYFIN     0x00000002
+
+//0x0008
+
+
+//0x0020
+#define MCP_DST_BLK_STRIDE_SHFT   0
+#define MCP_DST_BLK_WIDTH_SHFT    16

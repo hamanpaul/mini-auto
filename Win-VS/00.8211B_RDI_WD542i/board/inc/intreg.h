@@ -1,0 +1,76 @@
+/*
+
+Copyright (c) 2008 Mars Semiconductor Corp.
+
+Module Name:
+
+	intreg.h
+
+Abstract:
+
+   	The content of interrupt registers.
+
+Environment:
+
+    	ARM RealView Developer Suite
+
+Revision History:
+	
+	2005/08/26	David Tsai	Create	
+
+*/
+
+#ifndef __INT_REG_H__
+#define __INT_REG_H__
+
+/* IntFiqInput */
+#define INT_FIQ_INPUT_MPEG4		0x00000001
+#define INT_FIQ_INPUT_JPEG		0x00000002
+#define INT_FIQ_INPUT_SIU		0x00000004
+#define INT_FIQ_INPUT_IPU		0x00000008
+#define INT_FIQ_INPUT_ISU		0x00000010
+#define INT_FIQ_INPUT_IDU		0x00000020
+#define INT_FIQ_INPUT_HIU		0x00000040
+
+/* IntFiqMask */
+#define INT_FIQ_MASK_MPEG4		0x00000001
+#define INT_FIQ_MASK_JPEG		0x00000002
+#define INT_FIQ_MASK_SIU		0x00000004
+#define INT_FIQ_MASK_IPU		0x00000008
+#define INT_FIQ_MASK_ISU		0x00000010
+#define INT_FIQ_MASK_IDU		0x00000020
+#define INT_FIQ_MASK_HIU		0x00000040
+
+/* IntIrqInput */
+#define INT_IRQ_INPUT_TIMER		0x00000001
+#define INT_IRQ_INPUT_ADC		0x00000002
+#define INT_IRQ_INPUT_GPI		0x00000004
+#define INT_IRQ_INPUT_CF		0x00000010
+#define INT_IRQ_INPUT_DMA		0x00000020
+#define INT_IRQ_INPUT_SPI		0x00000080
+#define INT_IRQ_INPUT_UART		0x00000100
+#define INT_IRQ_INPUT_I2C		0x00000200
+#define INT_IRQ_INPUT_GPIO		0x00000400
+#define INT_IRQ_INPUT_SMC		0x00000800
+#define INT_IRQ_INPUT_SDC		0x00001000
+#define INT_IRQ_INPUT_USB		0x00002000
+#define INT_IRQ_INPUT_RTC		0x00004000
+#define INT_IRQ_INPUT_IIS		0x00008000
+
+/* IntIrqMask */
+#define INT_IRQ_MASK_TIMER		0x00000001
+#define INT_IRQ_MASK_ADC		0x00000002
+#define INT_IRQ_MASK_GPI		0x00000004
+#define INT_IRQ_MASK_CF		        0x00000010
+#define INT_IRQ_MASK_DMA		0x00000020
+#define INT_IRQ_MASK_SPI		0x00000080
+#define INT_IRQ_MASK_UART		0x00000100
+#define INT_IRQ_MASK_I2C		0x00000200
+#define INT_IRQ_MASK_GPIO		0x00000400
+#define INT_IRQ_MASK_SMC		0x00000800
+#define INT_IRQ_MASK_SDC		0x00001000
+#define INT_IRQ_MASK_USB		0x00002000
+#define INT_IRQ_MASK_RTC		0x00004000
+#define INT_IRQ_MASK_IIS		0x00008000
+
+#endif

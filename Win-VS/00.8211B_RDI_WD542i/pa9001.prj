@@ -1,0 +1,60 @@
+# Container Project file created by RVDEBUG. Do not hand edit unless
+# you know what you are doing. Use the Settings Window
+# Copyright (c) 2002 - ARM Ltd
+$cont_prj.stp
+[PROJECT] 
+author_=900643
+Modification_History.create={\
+  date_="Fri Jul 29 16:16:07 2005":user_=900643:\
+	description="Created as Project pa9001"\
+}
+type_=Container
+description="Container project"
+sub_project=".\board\board.prj"
+sub_project=".\LwIP\Lwip.prj"
+sub_project=".\host\host.prj"
+sub_project=".\ciu\ciu.prj"
+sub_project=".\rfiu\RFIU.prj"
+sub_project=".\mars_timer\mars_timer.prj"
+sub_project=".\mars_dma\mars_dma.prj"
+sub_project=".\mars_int\mars_int.prj"
+sub_project=".\mars_system\mars_system.prj"
+sub_project=".\spi\spi.prj"
+sub_project=".\isp\isp.prj"
+sub_project=".\mov\mov.prj"
+sub_project=".\avi\avi.prj"
+sub_project=".\asf\asf.prj"
+sub_project=".\mp4\mp4.prj"
+sub_project=".\sys\sys.prj"
+sub_project=".\dpof\dpof.prj"
+sub_project=".\dcf\dcf.prj"
+sub_project=".\hiu\hiu.prj"
+sub_project=".\ui\ui.prj"
+sub_project=".\adc\adc.prj"
+sub_project=".\iis\iis.prj"
+sub_project=".\smc\smc.prj"
+sub_project=".\gpi\gpi.prj"
+sub_project=".\cf\cf.prj"
+sub_project=".\rtc\rtc.prj"
+sub_project=".\gpio\gpio.prj"
+sub_project=".\timer\timer.prj"
+sub_project=".\idu\idu.prj"
+sub_project=".\isu\isu.prj"
+sub_project=".\ipu\ipu.prj"
+sub_project=".\hdmi\hdmi.prj"
+sub_project=".\ramdisk\ramdisk.prj"
+sub_project=".\siu\siu.prj"
+sub_project=".\VideoCodec\VideoCodec.prj"
+sub_project=".\jpeg\jpeg.prj"
+sub_project=".\i2c\i2c.prj"
+sub_project=".\usb\usb.prj"
+sub_project=".\sdc\sdc.prj"
+sub_project=".\uart\uart.prj"
+sub_project=".\encrypt\encrypt.prj"
+sub_project=".\shell\shell.prj"
+sub_project=".\fs\fs.prj"
+sub_project=".\debug\debug.prj"
+sub_project=".\main\main.prj"
+sub_project=".\ucos_ii\ucos_ii.prj"
+sub_project=".\dummy\dummy.prj"
+

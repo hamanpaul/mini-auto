@@ -1,0 +1,16 @@
+# Container Project file created by RVDEBUG. Do not hand edit unless
+# you know what you are doing. Use the Settings Window
+# Copyright (c) 2002 - ARM Ltd
+$cont_prj.stp
+[PROJECT] 
+author_=shengchia_l
+Modification_History.create={\
+  date_="Wed Aug 31 15:32:51 2011":user_=shengchia_l:\
+	description="Created as Project VideoCodec"\
+}
+type_=Container
+description="Container project"
+sub_project=".\mpeg4\mpeg4.prj"
+sub_project=".\h264\H264.prj"
+sub_project=".\common\VideoCodecCommon.prj"
+

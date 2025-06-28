@@ -1,0 +1,8 @@
+---- ram_heap_size Matches (7 in 2 files) ----
+MemoryPool.c (main\src):unsigned int ram_heap_size(void);    
+MemoryPool.c (main\src):        if(ram_heap_size() > 0) //move PBUF_RAM to MemoryPool?
+MemoryPool.c (main\src):            memset(addr, 0, ram_heap_size());
+MemoryPool.c (main\src):            addr += ram_heap_size();
+MemoryPool.c (main\src):            printf("lwip ram heap 0x%x size = %d\n", addr_temp, ram_heap_size());
+MR9300.htm (out\obj):<BR>[Calls]<UL><LI><a href="#[6c2]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ram_heap_size
+MR9300.htm (out\obj):<P><STRONG><a name="[6c2]"></a>ram_heap_size</STRONG> (ARM, 8 bytes, Stack size 0 bytes, porting.o(i.ram_heap_size))

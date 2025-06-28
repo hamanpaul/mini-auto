@@ -1,0 +1,75 @@
+# Standard Project file created by RVDEBUG. Do not hand edit unless
+# you know what you are doing. Use the Settings Window
+# Copyright (c) 2002 - ARM Ltd
+$sARM_C21.stp
+[PROJECT] 
+author_=900643
+Modification_History.create={\
+  date_="Fri Aug 19 20:39:37 2005":user_=900643:\
+	description="Created as Project smc"\
+}
+type_=Library
+processor_=ARM-C21
+description="Library Project"
+[SETTINGS] 
+[CONFIGURATION] 
+config=Debug
+config=Release
+config=DebugRel
+active_config=Release
+[COMPILE=arm] 
+Sources.files=".\src\smcmap_Adv.c"
+%Release%Compilation.generate_debug=disabled
+%DebugRel%Compilation.generate_debug=enabled
+%Debug%Compilation.generate_debug=enabled
+%Release%Optimization.debug_optimize=maximum
+%DebugRel%Optimization.debug_optimize=partial
+Preprocessor.include="..\inc\"
+Sources.files=".\src\smcfs_Normal.c"
+Sources.files=".\src\smcfs_Adv.c"
+Preprocessor.include=".\inc\"
+Sources.files=".\src\smc_9002_Adv.c"
+Sources.files=".\src\smc_9002_Normal.c"
+Sources.files=".\src\smcusb.c"
+Sources.files=".\src\smcwc.c"
+Sources.files=".\src\smcmap_Normal.c"
+Sources.files=".\src\smc_9001_Normal.c"
+[COMPILE=arm_cpp] 
+Compilation.compiler=ARM_Cpp
+Compilation.Checking.source_language=CPlusPlus
+%Release%Compilation.generate_debug=disabled
+%DebugRel%Compilation.generate_debug=enabled
+%Debug%Compilation.generate_debug=enabled
+%Release%Optimization.debug_optimize=maximum
+%DebugRel%Optimization.debug_optimize=partial
+[COMPILE=thumb] 
+Compilation.compiler=Thumb_C
+%Release%Compilation.generate_debug=disabled
+%DebugRel%Compilation.generate_debug=enabled
+%Debug%Compilation.generate_debug=enabled
+%Release%Optimization.debug_optimize=maximum
+%DebugRel%Optimization.debug_optimize=partial
+[COMPILE=thumb_cpp] 
+Compilation.compiler=Thumb_Cpp
+Compilation.Checking.source_language=CPlusPlus
+%Release%Compilation.generate_debug=disabled
+%DebugRel%Compilation.generate_debug=enabled
+%Debug%Compilation.generate_debug=enabled
+%Release%Optimization.debug_optimize=maximum
+%DebugRel%Optimization.debug_optimize=partial
+[ASSEMBLE=arm] 
+%Release%Assembly.generate_debug=disabled
+%DebugRel%Assembly.generate_debug=enabled
+%Debug%Assembly.generate_debug=enabled
+[ASSEMBLE=thumb] 
+disable=True
+%Release%Assembly.generate_debug=disabled
+%DebugRel%Assembly.generate_debug=enabled
+%Debug%Assembly.generate_debug=enabled
+Assembly.assemble_mode=Thumb
+[CUSTOM=default] 
+[BUILD_LIB] 
+library="..\..\lib\release\smc_release.lib"
+makefile="smc_release.mk"
+
+

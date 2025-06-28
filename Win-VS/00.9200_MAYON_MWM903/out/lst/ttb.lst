@@ -1,0 +1,65 @@
+
+
+
+ARM Macro Assembler    Page 1 
+
+
+    1 00000000         ;
+    2 00000000         ;Copyright (c) 2008 Mars Semiconductor Corp.
+    3 00000000         ;
+    4 00000000         ;Module Name:
+    5 00000000         ;
+    6 00000000         ; ttb.s
+    7 00000000         ;
+    8 00000000         ;Abstract:
+    9 00000000         ;
+   10 00000000         ;    The TTB region.
+   11 00000000         ;
+   12 00000000         ;Environment:
+   13 00000000         ;
+   14 00000000         ;    ARM RealView Developer Suite
+   15 00000000         ;
+   16 00000000         ;Revision History:
+   17 00000000         ; 
+   18 00000000         ; 2005/08/26 David Tsai Create 
+   19 00000000         ;
+   20 00000000         
+   21 00000000                 PRESERVE8
+   22 00000000         
+   23 00000000                 AREA             TableBase, DATA, NOINIT
+   24 00000000         
+   25 00000000                 EXPORT           TTB
+   26 00000000         
+   27 00000000         ; Create dummy variable used to locate TTB in memory
+   28 00000000         
+   29 00000000         TTB     SPACE            1
+   30 00000001         
+   31 00000001                 END
+Command Line: --debug --xref --diag_suppress=9931 --depend=.\out\obj\ttb.d -o.\
+out\obj\ttb.o -I.\inc -IC:\Keil_v5\ARM\RV31\INC -IC:\Keil_v5\ARM\CMSIS\Include 
+--predefine="__UVISION_VERSION SETA 518" --predefine="USE_SCATTER_SYMS SETA 1" 
+--list=.\out\lst\ttb.lst board\src\ttb.s
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+Relocatable symbols
+
+TTB 00000000
+
+Symbol: TTB
+   Definitions
+      At line 29 in file board\src\ttb.s
+   Uses
+      At line 25 in file board\src\ttb.s
+Comment: TTB used once
+TableBase 00000000
+
+Symbol: TableBase
+   Definitions
+      At line 23 in file board\src\ttb.s
+   Uses
+      None
+Comment: TableBase unused
+2 symbols
+334 symbols in table

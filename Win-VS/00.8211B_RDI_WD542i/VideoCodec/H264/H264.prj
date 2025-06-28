@@ -1,0 +1,73 @@
+# Standard Project file created by RVDEBUG. Do not hand edit unless
+# you know what you are doing. Use the Settings Window
+# Copyright (c) 2002 - ARM Ltd
+$sARM_C21.stp
+[PROJECT] 
+author_=shengchia_l
+Modification_History.create={\
+  date_="Wed Aug 31 10:48:59 2011":user_=shengchia_l:\
+	description="Created as Project H264"\
+}
+type_=Library
+processor_=ARM-C21
+description="Library Project"
+[SETTINGS] 
+[CONFIGURATION] 
+config=Debug
+config=Release
+config=DebugRel
+[COMPILE=arm] 
+Sources.files=".\src\header.c"
+Sources.files=".\src\nalu.c"
+%Release%Compilation.generate_debug=disabled
+%DebugRel%Compilation.generate_debug=enabled
+%Debug%Compilation.generate_debug=enabled
+%Release%Optimization.debug_optimize=maximum
+%DebugRel%Optimization.debug_optimize=partial
+Preprocessor.include=".\inc"
+Preprocessor.include="..\common\inc"
+Preprocessor.include="..\..\inc"
+Sources.files=".\src\nal.c"
+Sources.files=".\src\\vlc.c"
+Sources.files=".\src\parset.c"
+Sources.files=".\src\H264.c"
+Sources.files=".\src\H264RateControl.c"
+[COMPILE=arm_cpp] 
+Compilation.compiler=ARM_Cpp
+Compilation.Checking.source_language=CPlusPlus
+%Release%Compilation.generate_debug=disabled
+%DebugRel%Compilation.generate_debug=enabled
+%Debug%Compilation.generate_debug=enabled
+%Release%Optimization.debug_optimize=maximum
+%DebugRel%Optimization.debug_optimize=partial
+[COMPILE=thumb] 
+Compilation.compiler=Thumb_C
+%Release%Compilation.generate_debug=disabled
+%DebugRel%Compilation.generate_debug=enabled
+%Debug%Compilation.generate_debug=enabled
+%Release%Optimization.debug_optimize=maximum
+%DebugRel%Optimization.debug_optimize=partial
+[COMPILE=thumb_cpp] 
+Compilation.compiler=Thumb_Cpp
+Compilation.Checking.source_language=CPlusPlus
+%Release%Compilation.generate_debug=disabled
+%DebugRel%Compilation.generate_debug=enabled
+%Debug%Compilation.generate_debug=enabled
+%Release%Optimization.debug_optimize=maximum
+%DebugRel%Optimization.debug_optimize=partial
+[ASSEMBLE=arm] 
+%Release%Assembly.generate_debug=disabled
+%DebugRel%Assembly.generate_debug=enabled
+%Debug%Assembly.generate_debug=enabled
+[ASSEMBLE=thumb] 
+disable=True
+%Release%Assembly.generate_debug=disabled
+%DebugRel%Assembly.generate_debug=enabled
+%Debug%Assembly.generate_debug=enabled
+Assembly.assemble_mode=Thumb
+[CUSTOM=default] 
+[BUILD_LIB] 
+library="..\..\..\lib\H264.lib"
+makefile="H264.mk"
+
+
