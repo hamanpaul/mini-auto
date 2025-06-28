@@ -129,3 +129,71 @@ cython_debug/
 # Test reports
 test_report.txt
 test_report.log
+
+# Compiled files
+*.o
+*.obj
+*.bin
+*.exe
+*.dll
+*.so
+*.axf
+*.sym
+*.lib
+*.out
+
+# Project files
+*.prj
+*.mk
+*.dep
+*.map
+*.htm
+*.lnp
+*.crf
+*.d
+*.tds
+*.uvgui.*
+*.uvopt
+*.uvproj
+*.IAB
+*.IAD
+*.IMB
+*.IMD
+*.PFI
+*.PO
+*.PR
+*.PRI
+*.PS
+*.SearchResults
+*.WK3
+
+# Log files
+*.log
+
+# Compressed files
+*.zip
+*.rar
+
+# Image files
+*.jpg
+*.jpeg
+*.gif
+*.png
+*.bmp
+
+# Document files
+*.xls
+*.xlsx
+
+# Windows specific
+*.Identifier
+:Zone.Identifier
+
+# Backups
+*.bak
+
+# Embedded git repositories (if not using submodules)
+esp32-camera-repo/
+
+# VSCode
+.vscode/
