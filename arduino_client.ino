@@ -69,6 +69,9 @@
 #include <SoftwareSerial.h>
 #include <Arduino_JSON.h>
 #include <FastLED.h>
+#include <Servo.h> // Added for Servo
+#include <math.h>  // Added for math functions like sin, cos, sqrt, PI
+#include <Ultrasound.h> // Added for Ultrasound sensor
 
 // --- I2C Slave Addresses ---
 #define ESP32_I2C_SLAVE_ADDRESS 0x53 // As per GEMINI.md
@@ -85,6 +88,16 @@ const char* ssid = "Hcedu01";         // Your WiFi network SSID
 const char* password = "YOUR_WIFI_PASSWORD"; // Your WiFi network password
 const char* serverIp = "192.168.1.100";      // The IP address of your computer running the Python server
 const int serverPort = 8000;
+
+// --- Pin Definitions (from app_control.ino) ---
+const static uint8_t buzzerPin = 3;
+const static uint8_t servoPin = 5;
+const static uint8_t motorpwmPin[4] = {9,6,11,10} ;
+const static uint8_t motordirectionPin[4] = {12,7,13,8};
+
+// --- Hardware Objects ---
+Servo myservo;          // 实例化舵机
+Ultrasound ultrasound;  // 实例化超声波
 
 // --- Timing Control ---
 unsigned long lastThermalUpdateTime = 0;
@@ -117,6 +130,16 @@ void setup() {
   Serial.println("ESP-01S Serial started at 9600.");
 
   // Initialize hardware (motors, sensors, etc.) here
+  Motor_Init(); // Initialize motor pins
+  pinMode(servoPin, OUTPUT);
+  myservo.attach(servoPin); // Attach servo to pin
+  myservo.write(90); // Set initial servo angle to 90 degrees (center)
+  
+  // Play startup tone
+  tone(buzzerPin, 1200); 
+  delay(100);
+  noTone(buzzerPin);
+
   FastLED.addLeds<WS2812, ledPin, RGB>(rgbs, 1);
   FastLED.setBrightness(50); // Set a default brightness
 
@@ -269,6 +292,86 @@ uint8_t getLedStatusCode(bool is_wifi_connected, uint8_t current_error_code, boo
 
   // Priority 4: 01 (Green / Normal Operation)
   return 1; // 01: Green
+}
+
+  Serial.println("---------------------------");
+}
+
+// --- Motor Control Functions (Ported from app_control.ino) ---
+
+/* 电机初始化函数 */
+void Motor_Init(void)
+{
+  for(uint8_t i = 0; i < 4; i++) {
+    pinMode(motordirectionPin[i], OUTPUT);
+    pinMode(motorpwmPin[i], OUTPUT);
+  }
+  Velocity_Controller( 0, 0, 0);
+}
+
+/**
+ * @brief 速度控制函数
+ * @param angle   用于控制小车的运动方向，小车以车头为0度方向，逆时针为正方向。
+ *                取值为0~359
+ * @param velocity   用于控制小车速度，取值为0~100。
+ * @param rot     用于控制小车的自转速度，取值为-100~100，若大于0小车有一个逆
+ *                 时针的自转速度，若小于0则有一个顺时针的自转速度。
+ * @param drift   用于决定小车是否开启漂移功能，取值为0或1，若为0则开启，反之关闭。
+ * @retval None
+ */
+void Velocity_Controller(uint16_t angle, uint8_t velocity,int8_t rot)
+{
+  int8_t velocity_0, velocity_1, velocity_2, velocity_3;
+  float speed = 1;
+  angle += 90;
+  float rad = angle * PI / 180;
+  if (rot == 0) speed = 1;///< 速度因子
+  else speed = 0.5;
+  velocity /= sqrt(2);
+  velocity_0 = (velocity * sin(rad) - velocity * cos(rad)) * speed + rot * speed;
+  velocity_1 = (velocity * sin(rad) + velocity * cos(rad)) * speed - rot * speed;
+  velocity_2 = (velocity * sin(rad) - velocity * cos(rad)) * speed - rot * speed;
+  velocity_3 = (velocity * sin(rad) + velocity * cos(rad)) * speed + rot * speed;
+  Motors_Set(velocity_0, velocity_1, velocity_2, velocity_3);
+}
+
+/**
+ * @brief PWM与轮子转向设置函数
+ * @param Motor_x   作为PWM与电机转向的控制数值。根据麦克纳姆轮的运动学分析求得。
+ * @retval None
+ */
+void Motors_Set(int8_t Motor_0, int8_t Motor_1, int8_t Motor_2, int8_t Motor_3)
+{
+  int8_t pwm_set[4];
+  int8_t motors[4] = { Motor_0, Motor_1, Motor_2, Motor_3};
+  bool direction[4] = { 1, 0, 0, 1};///< 前进 左1 右0
+  for(uint8_t i = 0; i < 4; ++i) // Added initialization for i
+  {
+    if(motors[i] < 0) direction[i] = !direction[i];
+    else direction[i] = direction[i];
+
+    if(motors[i] == 0) pwm_set[i] = 0;
+    else pwm_set[i] = abs(motors[i]);
+
+    digitalWrite(motordirectionPin[i], direction[i]);
+    PWM_Out(motorpwmPin[i], pwm_set[i]);
+  }
+}
+
+/* 模拟PWM输出 */
+void PWM_Out(uint8_t PWM_Pin, int8_t DutyCycle)
+{
+  // This function needs to be non-blocking and handle its own timing.
+  // The original app_control.ino uses a global previousTime_us for this.
+  // We need to ensure this is handled correctly in our non-blocking loop.
+  // For now, we'll use a simple analogWrite if available, or a placeholder.
+  // A proper non-blocking software PWM would be more complex.
+
+  // For simplicity and initial testing, using analogWrite if pin supports PWM
+  // Note: Not all pins support analogWrite (PWM) on Arduino Uno.
+  // Pins 3, 5, 6, 9, 10, and 11 support PWM.
+  // Our motorpwmPin are 9, 6, 11, 10 - all support PWM.
+  analogWrite(PWM_Pin, map(DutyCycle, 0, 100, 0, 255));
 }
 
 /**
@@ -486,23 +589,22 @@ void syncWithServer() {
     // Motor Speed (m)
     if (responseJson.hasOwnProperty("m")) {
       int motor_speed = (int)responseJson["m"];
-      // TODO: Implement motor control logic
+      // Direction Angle (d)
+      int direction_angle = 0; // Default to 0
+      if (responseJson.hasOwnProperty("d")) {
+        direction_angle = (int)responseJson["d"];
+      }
+      Velocity_Controller(direction_angle, motor_speed, 0); // Control motors
       Serial.print("Motor speed: ");
-      Serial.println(motor_speed);
-    }
-
-    // Direction Angle (d)
-    if (responseJson.hasOwnProperty("d")) {
-      int direction_angle = (int)responseJson["d"];
-      // TODO: Implement direction control logic
-      Serial.print("Direction angle: ");
+      Serial.print(motor_speed);
+      Serial.print(", Direction angle: ");
       Serial.println(direction_angle);
     }
 
     // Servo Angle (a)
     if (responseJson.hasOwnProperty("a")) {
       int servo_angle = (int)responseJson["a"];
-      // TODO: Implement servo control logic
+      myservo.write(servo_angle); // Control servo
       Serial.print("Servo angle: ");
       Serial.println(servo_angle);
     }
