@@ -64,6 +64,23 @@
 //     - Trigger: System executing a time-consuming task (e.g., complex command, firmware update, internal computation in avoidance mode).
 //     - Behavior: Set LED to (0, 0, 255) - BRIGHT BLUE.
 
+// --- command_byte Definition ---
+// This byte encapsulates control commands from the server.
+//
+// Bit 0 & 1: Buzzer Control (2 bits)
+//   00: Off
+//   01: Short Beep (e.g., 100ms)
+//   10: Long Beep (e.g., 500ms)
+//   11: Continuous Beep (e.g., 1 second on, 1 second off)
+//
+// Bit 2 & 3: LED Override (2 bits)
+//   00: No Override (LED controlled by internal status_byte logic)
+//   01: Force Green
+//   10: Force Red
+//   11: Force Blue
+//
+// Bit 4-7: Reserved for other commands
+
 #include <Wire.h>
 #include <Melopero_AMG8833.h>
 #include <SoftwareSerial.h>
@@ -437,6 +454,65 @@ void setLedStatus(uint8_t led_code) {
 }
 
 /**
+ * @brief Controls the buzzer based on a 2-bit code.
+ * This function is non-blocking.
+ * @param buzzer_code 2-bit code: 00=Off, 01=Short Beep, 10=Long Beep, 11=Continuous Beep.
+ */
+void controlBuzzer(uint8_t buzzer_code) {
+  static unsigned long lastBuzzerToggleTime = 0;
+  static bool buzzerState = false; // true = ON, false = OFF
+  const unsigned long SHORT_BEEP_DURATION = 100; // ms
+  const unsigned long LONG_BEEP_DURATION = 500;  // ms
+  const unsigned long CONTINUOUS_BEEP_INTERVAL = 1000; // ms (on/off cycle)
+
+  unsigned long currentTime = millis();
+
+  switch (buzzer_code) {
+    case 0: // 00: Off
+      noTone(buzzerPin);
+      buzzerState = false;
+      break;
+    case 1: // 01: Short Beep (one-shot)
+      if (!buzzerState) { // Only trigger if not already beeping from this command
+        tone(buzzerPin, 1000); // 1kHz tone
+        lastBuzzerToggleTime = currentTime;
+        buzzerState = true;
+      }
+      if (buzzerState && (currentTime - lastBuzzerToggleTime >= SHORT_BEEP_DURATION)) {
+        noTone(buzzerPin);
+        buzzerState = false; // Reset state after beep
+      }
+      break;
+    case 2: // 10: Long Beep (one-shot)
+      if (!buzzerState) {
+        tone(buzzerPin, 1000);
+        lastBuzzerToggleTime = currentTime;
+        buzzerState = true;
+      }
+      if (buzzerState && (currentTime - lastBuzzerToggleTime >= LONG_BEEP_DURATION)) {
+        noTone(buzzerPin);
+        buzzerState = false;
+      }
+      break;
+    case 3: // 11: Continuous Beep (toggling)
+      if (currentTime - lastBuzzerToggleTime >= CONTINUOUS_BEEP_INTERVAL / 2) {
+        if (buzzerState) {
+          noTone(buzzerPin);
+        } else {
+          tone(buzzerPin, 1000);
+        }
+        buzzerState = !buzzerState;
+        lastBuzzerToggleTime = currentTime;
+      }
+      break;
+    default:
+      noTone(buzzerPin);
+      buzzerState = false;
+      break;
+  }
+}
+
+/**
  * @brief Sends a POST request to the server via the ESP-01S and returns the response body.
  * This function is used for the main sync endpoint.
  * @param path The API path for the request (e.g., "/api/sync").
@@ -600,13 +676,17 @@ void syncWithServer() {
     }
 
     // --- Process Commands ---
-    // Command Byte (Bit 0 & 1: Buzzer, Bit 2 & 3: LED Override, etc.)
+    // Command Byte (c)
     if (responseJson.hasOwnProperty("c")) {
       uint8_t command_byte = (uint8_t)((int)responseJson["c"]);
-      // TODO: Implement buzzer control based on command_byte
-      // TODO: Implement LED override based on command_byte (if applicable)
+      
+      // Extract buzzer control (Bit 0 & 1)
+      uint8_t buzzer_code = command_byte & 0b00000011; // Get Bit 0 & 1
+      controlBuzzer(buzzer_code);
       Serial.print("Command byte: ");
       Serial.println(command_byte);
+
+      // TODO: Implement LED override based on command_byte (Bit 2 & 3)
     }
 
     // Motor Speed (m)
