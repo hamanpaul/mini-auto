@@ -111,6 +111,11 @@ SoftwareSerial espSerial(2, 3);
 
 // --- Global Variables ---
 int g_current_voltage_mv = 0; // Current battery voltage in mV (e.g., 785 for 7.85V)
+bool g_is_wifi_connected = false; // Track WiFi connection status
+bool g_thermal_sensor_error = false; // Track thermal sensor error
+bool g_vision_module_error = false; // Track vision module error
+bool g_motor_error = false; // Track motor error (placeholder for now)
+bool g_communication_error = false; // Track communication error with backend
 
 // --- Function Declarations ---
 void setupEsp01s();
@@ -195,10 +200,12 @@ void setupEsp01s() {
 
   // Check if connected
   String response = sendAtCommand("AT+CIFSR", 2000); // Get IP address
-  if (response.indexOf("ERROR") == -1) {
+  if (response.indexOf("ERROR") == -1 && response.indexOf("STAIP") != -1) {
     Serial.println("ESP-01S Connected to WiFi!");
+    g_is_wifi_connected = true;
   } else {
     Serial.println("ESP-01S Failed to connect to WiFi.");
+    g_is_wifi_connected = false;
   }
   Serial.println("---------------------------");
 }
@@ -256,13 +263,19 @@ uint8_t getBatteryLevelCode() {
  * @return 2-bit error code (00:No Error, 01:Comm Error, 10:Sensor Error, 11:Motor Error).
  */
 uint8_t getErrorCode() {
-  // TODO: Implement actual error detection logic here.
-  // For now, return No Error (00).
+  // Priority: Motor/Actuator > Sensor > Communication > No Error
 
-  // Example placeholders for future error detection:
-  // if (communication_failed) return 1; // 01: Communication Error
-  // if (thermal_sensor_error || vision_sensor_error) return 2; // 10: Sensor Error
-  // if (motor_driver_error) return 3; // 11: Motor/Actuator Error
+  if (g_motor_error) {
+    return 3; // 11: Motor/Actuator Error
+  }
+  
+  if (g_thermal_sensor_error || g_vision_module_error) {
+    return 2; // 10: Sensor Error
+  }
+
+  if (g_communication_error) {
+    return 1; // 01: Communication Error
+  }
 
   return 0; // 00: No Error
 }
@@ -502,14 +515,22 @@ void syncWithServer() {
   status_byte |= battery_code; // Directly set Bit 0 & 1
 
   // Thermal Sensor Status (Bit 2)
-  // TODO: Implement actual thermal sensor error detection
-  bool thermal_sensor_ok = true; // Placeholder
-  if (thermal_sensor_ok) status_byte |= (1 << 2);
+  // Check thermal sensor error during update
+  if (statusCode != 0) {
+    g_thermal_sensor_error = true;
+  } else {
+    g_thermal_sensor_error = false;
+  }
+  if (!g_thermal_sensor_error) status_byte |= (1 << 2);
 
   // Vision Module Status (Bit 3)
-  // TODO: Implement actual vision module status detection via I2C
-  bool vision_module_ok = true; // Placeholder
-  if (vision_module_ok) status_byte |= (1 << 3);
+  // Check vision module error during IP retrieval
+  if (current_esp32_ip == "") {
+    g_vision_module_error = true;
+  } else {
+    g_vision_module_error = false;
+  }
+  if (!g_vision_module_error) status_byte |= (1 << 3);
 
   // Error Code (Bit 4 & 5)
   uint8_t error_code = getErrorCode();
@@ -529,7 +550,7 @@ void syncWithServer() {
 
   // ESP32-S3 IP Address (sent periodically or on change)
   static String esp32_ip = "";
-  String current_esp32_ip = getEsp32IpAddress();
+  // String current_esp32_ip = getEsp32IpAddress(); // Already called above
   if (current_esp32_ip != "" && current_esp32_ip != esp32_ip) {
     esp32_ip = current_esp32_ip;
     payload["i"] = esp32_ip; // "i" for IP
@@ -554,7 +575,7 @@ void syncWithServer() {
     } else {
       Serial.print("Failed to read pixel matrix for sync. Error: ");
       Serial.println(sensor.getErrorDescription(statusCode));
-      // TODO: Set thermal sensor error bit in status_byte
+      g_thermal_sensor_error = true; // Set thermal sensor error
     }
   }
 
@@ -572,8 +593,10 @@ void syncWithServer() {
     JSONVar responseJson = JSON.parse(responseBody);
     if (JSON.typeof(responseJson) == "undefined") {
       Serial.println("Failed to parse server response.");
-      // TODO: Set communication error bit in status_byte
+      g_communication_error = true; // Set communication error
       return;
+    } else {
+      g_communication_error = false; // Clear communication error if response is valid
     }
 
     // --- Process Commands ---
@@ -617,7 +640,7 @@ void syncWithServer() {
 
   } else {
     Serial.println("No response or HTTP POST failed.");
-    // TODO: Set communication error bit in status_byte
+    g_communication_error = true; // Set communication error
   }
   Serial.println("---------------------------");
 }
