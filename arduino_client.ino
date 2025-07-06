@@ -3,33 +3,28 @@
 /*
   Arduino API Client for Vehicle Control
 
-  This sketch demonstrates how to connect to a WiFi network and interact with a 
-  Python FastAPI server to send vehicle status updates and receive movement commands.
+  This sketch runs on an Arduino UNO and controls an ESP-01S module via AT commands
+  to interact with a Python FastAPI server. It sends vehicle status updates and 
+  receives movement commands.
 
   HARDWARE:
-  - ESP8266 or ESP32 based board
+  - Arduino UNO
+  - ESP-01S WiFi Module
+  - AMG8833 Thermal Sensor
+  - Motors, Servos, etc.
 
   LIBRARIES:
-  - ESP8266WiFi (for ESP8266) or WiFi (for ESP32)
-  - Arduino_JSON by Arduino
-  - ESP8266HTTPClient (for ESP8266) or HTTPClient (for ESP32)
+  - SoftwareSerial
+  - Arduino_JSON
 
   SETUP:
-  1. Install the required libraries via the Arduino IDE's Library Manager.
+  1. Connect ESP-01S TX to Arduino Pin 2 (RX) and RX to Arduino Pin 3 (TX).
   2. Update the `ssid`, `password`, and `serverIp` variables below.
-  3. Upload the sketch to your ESP board.
-  4. Open the Serial Monitor at 115200 baud to see the output.
+  3. Open the Serial Monitor at 9600 baud to see debug output.
+  4. Set the ESP-01S baud rate to 9600 if not already set.
 */
 
-// Include necessary libraries based on your board
-#if defined(ESP8266)
-  #include <ESP8266WiFi.h>
-  #include <ESP8266HTTPClient.h>
-#elif defined(ESP32)
-  #include <WiFi.h>
-  #include <HTTPClient.h>
-#endif
-
+#include <SoftwareSerial.h>
 #include <Arduino_JSON.h>
 
 // --- Configuration ---
@@ -38,154 +33,130 @@ const char* password = "YOUR_WIFI_PASSWORD"; // Your WiFi network password
 const char* serverIp = "192.168.1.100";      // The IP address of your computer running the Python server
 const int serverPort = 8000;
 
+// Define pins for SoftwareSerial to communicate with ESP-01S
+// UNO RX = Pin 2, UNO TX = Pin 3
+SoftwareSerial espSerial(2, 3); 
+
 // --- Function Declarations ---
-void connectToWiFi();
-bool sendStatusUpdate(int batteryLevel, const char* currentState);
-String getMovementCommand(const char* command);
+void setupEsp01s();
+bool httpPost(String path, String jsonPayload);
+String httpGet(String path);
+String sendAtCommand(String command, const int timeout);
+
 
 void setup() {
-  Serial.begin(115200);
-  while (!Serial) { } // Wait for serial connection
+  // Start serial communication with the computer for debugging
+  Serial.begin(9600);
+  while (!Serial) { }
+  Serial.println("Arduino UNO is ready.");
 
-  connectToWiFi();
+  // Start serial communication with the ESP-01S module
+  espSerial.begin(9600); // Common baud rate for ESP-01S
+  Serial.println("ESP-01S Serial started at 9600.");
+
+  // TODO: Initialize hardware (motors, sensors, etc.) here
+  
+  // Setup ESP-01S module (connect to WiFi, etc.)
+  setupEsp01s();
 }
 
 void loop() {
-  // --- Example Usage ---
+  // The main logic will be implemented here in subsequent steps.
+  // For now, it does nothing.
 
-  // 1. Send a status update to the server
-  Serial.println("\n--- Sending Status Update ---");
-  bool success = sendStatusUpdate(98, "stopped");
-  if (success) {
-    Serial.println("Status update sent successfully.");
-  } else {
-    Serial.println("Failed to send status update.");
-  }
-
-  delay(5000); // Wait 5 seconds
-
-  // 2. Request a movement command from the server
-  Serial.println("\n--- Requesting Movement Command ---");
-  String commandAction = getMovementCommand("forward");
-  if (commandAction != "") {
-    Serial.print("Received command: ");
-    Serial.println(commandAction);
-    // Here you would add your motor control logic based on the command
-    // e.g., if (commandAction == "前進") { moveMotorsForward(); }
-  } else {
-    Serial.println("Failed to get movement command or invalid response.");
-  }
+  // Example of what will be implemented:
+  // 1. Read sensor data (Thermal, Voltage).
+  // 2. Read IP from ESP32-S3 via I2C.
+  // 3. Report status and sensor data to the server via httpPost.
+  // 4. Get commands from the server via httpGet.
+  // 5. Execute commands (move motors, etc.).
   
-  delay(10000); // Wait 10 seconds before the next cycle
+  delay(5000); // Placeholder delay
+  Serial.println("Looping...");
 }
 
 /**
- * @brief Connects the ESP board to the configured WiFi network.
+ * @brief Sends a series of AT commands to set up the ESP-01S module.
  */
-void connectToWiFi() {
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected!");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-}
-
-/**
- * @brief Sends a vehicle status update to the server via a POST request.
- * @param batteryLevel The current battery percentage.
- * @param currentState A string describing the vehicle's current state (e.g., "stopped").
- * @return true if the request was successful (HTTP 200), false otherwise.
- */
-bool sendStatusUpdate(int batteryLevel, const char* currentState) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected.");
-    return false;
-  }
-
-  WiFiClient client;
-  HTTPClient http;
+void setupEsp01s() {
+  Serial.println("--- Setting up ESP-01S ---");
   
-  String serverUrl = "http://" + String(serverIp) + ":" + String(serverPort) + "/status";
-  http.begin(client, serverUrl);
-  http.addHeader("Content-Type", "application/json");
+  // Test AT communication
+  sendAtCommand("AT", 2000);
+  delay(1000);
 
-  // Create JSON payload
-  JSONVar payload;
-  payload["battery"] = batteryLevel;
-  payload["current_state"] = currentState;
-  String jsonPayload = JSON.stringify(payload);
+  // Reset the module
+  sendAtCommand("AT+RST", 2000);
+  delay(2000);
 
-  Serial.print("Sending POST to: ");
-  Serial.println(serverUrl);
-  Serial.print("Payload: ");
-  Serial.println(jsonPayload);
+  // Set mode to Station mode
+  sendAtCommand("AT+CWMODE=1", 2000);
+  delay(1000);
 
-  int httpResponseCode = http.POST(jsonPayload);
+  // Connect to WiFi
+  String connect_command = "AT+CWJAP=\"" + String(ssid) + "\",\"" + String(password) + "\"";
+  sendAtCommand(connect_command, 7000); // WiFi connection can take longer
+  delay(5000);
 
-  if (httpResponseCode > 0) {
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-    String responseBody = http.getString();
-    Serial.print("Response body: ");
-    Serial.println(responseBody);
-    http.end();
-    return (httpResponseCode == 200);
+  // Check if connected
+  String response = sendAtCommand("AT+CIFSR", 2000); // Get IP address
+  if (response.indexOf("ERROR") == -1) {
+    Serial.println("ESP-01S Connected to WiFi!");
   } else {
-    Serial.print("Error on sending POST: ");
-    Serial.println(httpResponseCode);
-    http.end();
-    return false;
+    Serial.println("ESP-01S Failed to connect to WiFi.");
   }
+  Serial.println("---------------------------");
 }
 
 /**
- * @brief Gets a movement command from the server via a GET request.
- * @param command The command to request (e.g., "forward", "backward").
- * @return A String containing the "action" from the JSON response, or an empty string on failure.
+ * @brief Sends a POST request to the server via the ESP-01S.
+ * @param path The API path for the request (e.g., "/api/update_status").
+ * @param jsonPayload The JSON string to send as the request body.
+ * @return true if the request was successful (e.g., received "200 OK"), false otherwise.
  */
-String getMovementCommand(const char* command) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected.");
-    return "";
-  }
+bool httpPost(String path, String jsonPayload) {
+  // This function will be implemented to send AT commands for:
+  // AT+CIPSTART, AT+CIPSEND, and the raw HTTP POST request.
+  return false;
+}
 
-  WiFiClient client;
-  HTTPClient http;
+/**
+ * @brief Sends a GET request to the server via the ESP-01S.
+ * @param path The API path for the request (e.g., "/api/command").
+ * @return A String containing the body of the HTTP response.
+ */
+String httpGet(String path) {
+  // This function will be implemented to send AT commands for:
+  // AT+CIPSTART, AT+CIPSEND, and the raw HTTP GET request.
+  return "";
+}
+
+/**
+ * @brief A utility function to send an AT command and get the response.
+ * @param command The AT command to send (without \r\n).
+ * @param timeout The maximum time to wait for a response in milliseconds.
+ * @return The response from the ESP-01S as a String.
+ */
+String sendAtCommand(String command, const int timeout) {
+  String response = "";
   
-  String serverUrl = "http://" + String(serverIp) + ":" + String(serverPort) + "/" + String(command);
-  http.begin(client, serverUrl);
-
-  Serial.print("Sending GET to: ");
-  Serial.println(serverUrl);
-
-  int httpResponseCode = http.GET();
-  String action = "";
-
-  if (httpResponseCode == 200) {
-    String payload = http.getString();
-    Serial.print("Response payload: ");
-    Serial.println(payload);
-
-    // Parse the JSON response
-    JSONVar myObject = JSON.parse(payload);
-
-    if (JSON.typeof(myObject) == "undefined") {
-      Serial.println("Parsing input failed!");
-    } else if (myObject.hasOwnProperty("action")) {
-      // Extract the "action" value
-      action = (const char*) myObject["action"];
+  espSerial.println(command); // Send the AT command to the ESP-01S
+  
+  long int startTime = millis();
+  while ((startTime + timeout) > millis()) {
+    while (espSerial.available()) {
+      char c = espSerial.read();
+      response += c;
     }
-  } else {
-    Serial.print("Error on sending GET: ");
-    Serial.println(httpResponseCode);
   }
-
-  http.end();
-  return action;
+  
+  // Print command and response to the main serial for debugging
+  Serial.print("--- AT Command ---\nSent: ");
+  Serial.println(command);
+  Serial.print("Recv: ");
+  Serial.println(response);
+  Serial.println("--------------------");
+  
+  return response;
 }
 
