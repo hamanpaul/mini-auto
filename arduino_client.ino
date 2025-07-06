@@ -60,20 +60,7 @@ void setup() {
   setupEsp01s();
 }
 
-void loop() {
-  // The main logic will be implemented here in subsequent steps.
-  // For now, it does nothing.
-
-  // Example of what will be implemented:
-  // 1. Read sensor data (Thermal, Voltage).
-  // 2. Read IP from ESP32-S3 via I2C.
-  // 3. Report status and sensor data to the server via httpPost.
-  // 4. Get commands from the server via httpGet.
-  // 5. Execute commands (move motors, etc.).
-  
-  delay(5000); // Placeholder delay
-  Serial.println("Looping...");
-}
+void loop() {  Serial.println("--- Starting new loop cycle ---");  // 1. Test HTTP POST  Serial.println("Testing HTTP POST...");  JSONVar postPayload;  postPayload["voltage"] = 7.4;  postPayload["status"] = "testing";  String jsonString = JSON.stringify(postPayload);    bool postSuccess = httpPost("/api/status_update", jsonString);  if (postSuccess) {    Serial.println("POST request successful.");  } else {    Serial.println("POST request failed.");  }  delay(2000); // Wait a bit between requests  // 2. Test HTTP GET  Serial.println("\nTesting HTTP GET...");  String responseBody = httpGet("/api/command");  if (responseBody != "") {    Serial.print("GET request successful. Response body: ");    Serial.println(responseBody);  } else {    Serial.println("GET request failed or returned empty body.");  }  // Wait for 10 seconds before the next cycle  Serial.println("\n--- Loop cycle finished. Waiting 10 seconds... ---");  delay(10000);} 
 
 /**
  * @brief Sends a series of AT commands to set up the ESP-01S module.
@@ -115,10 +102,15 @@ void setupEsp01s() {
  * @return true if the request was successful (e.g., received "200 OK"), false otherwise.
  */
 bool httpPost(String path, String jsonPayload) {
-  // This function will be implemented to send AT commands for:
-  // AT+CIPSTART, AT+CIPSEND, and the raw HTTP POST request.
-  return false;
-}
+  String httpRequest = "POST " + path + " HTTP/1.1\r\n";
+  httpRequest += "Host: " + String(serverIp) + "\r\n";
+  httpRequest += "Content-Type: application/json\r\n";
+  httpRequest += "Content-Length: " + String(jsonPayload.length()) + "\r\n";
+  httpRequest += "Connection: close\r\n\r\n";
+  httpRequest += jsonPayload;
+
+  // Establish TCP connection
+  String response = sendAtCommand("AT+CIPSTART=\"TCP\",\"" + String(serverIp) + "\",
 
 /**
  * @brief Sends a GET request to the server via the ESP-01S.
@@ -126,9 +118,34 @@ bool httpPost(String path, String jsonPayload) {
  * @return A String containing the body of the HTTP response.
  */
 String httpGet(String path) {
-  // This function will be implemented to send AT commands for:
-  // AT+CIPSTART, AT+CIPSEND, and the raw HTTP GET request.
-  return "";
+  String httpRequest = "GET " + path + " HTTP/1.1\r\n";
+  httpRequest += "Host: " + String(serverIp) + "\r\n";
+  httpRequest += "Connection: close\r\n\r\n";
+
+  // Establish TCP connection
+  String response = sendAtCommand("AT+CIPSTART=\"TCP\",\"" + String(serverIp) + "\",\"" + String(serverPort), 5000);
+  if (response.indexOf("ERROR") != -1) {
+    Serial.println("Failed to establish TCP connection.");
+    return "";
+  }
+
+  // Send the HTTP request
+  sendAtCommand("AT+CIPSEND=" + String(httpRequest.length()), 2000);
+  response = sendAtCommand(httpRequest, 5000);
+
+  // Close the connection
+  sendAtCommand("AT+CIPCLOSE", 2000);
+
+  // Check for a valid response and extract the body
+  int bodyStartIndex = response.indexOf("\r\n\r\n");
+  if (response.indexOf("200 OK") != -1 && bodyStartIndex != -1) {
+    Serial.println("HTTP GET successful.");
+    // Return the response body, which is after the double CRLF
+    return response.substring(bodyStartIndex + 4);
+  } else {
+    Serial.println("HTTP GET failed.");
+    return "";
+  }
 }
 
 /**
