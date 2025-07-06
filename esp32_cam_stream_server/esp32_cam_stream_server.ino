@@ -8,10 +8,16 @@
 #include "esp_http_server.h"
 
 #include "WiFi.h"
+#include "Wire.h" // Include Wire.h for I2C communication
 
 // --- WiFi Configuration ---
-const char* ssid = "YOUR_WIFI_SSID";         // <<<<<<< CHANGE THIS
+const char* ssid = "Hcedu01";         // <<<<<<< CHANGE THIS
 const char* password = "YOUR_WIFI_PASSWORD"; // <<<<<<< CHANGE THIS
+
+// --- I2C Slave Configuration ---
+#define I2C_SLAVE_ADDRESS 0x53 // As per GEMINI.md
+#define I2C_SDA_PIN 21         // Standard I2C SDA pin for ESP32
+#define I2C_SCL_PIN 22         // Standard I2C SCL pin for ESP32
 
 // --- Camera Pin Definitions for ESP32-S3-WROOM (GC2415 compatible) ---
 // These pins are derived from the esp32-camera/examples/camera_example/main/take_picture.c
@@ -190,9 +196,25 @@ void setup() {
 
   // Start Web Server
   start_webserver();
+
+  // Initialize I2C as slave
+  Wire.begin(I2C_SLAVE_ADDRESS, I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.onRequest(sendIpAddress);
+  Serial.println("I2C Slave initialized.");
 }
 
 void loop() {
   // Nothing much to do in loop, as the web server runs in the background
   delay(10);
 }
+
+/**
+ * @brief Callback function for I2C master requests. Sends the ESP32's IP address.
+ */
+void sendIpAddress() {
+  String ipAddress = WiFi.localIP().toString();
+  Serial.print("Sending IP via I2C: ");
+  Serial.println(ipAddress);
+  Wire.write(ipAddress.c_str());
+}
+
