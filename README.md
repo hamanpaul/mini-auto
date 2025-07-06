@@ -97,13 +97,48 @@ graph TD
 *   **FastAPI 框架:**
     *   使用 FastAPI 構建 RESTful API。
     *   動態載入 `apis` 目錄下的路由。
-*   **同步端點 (`/api/sync`):**
-    *   **待實作:** 接收來自 Arduino UNO 的車輛狀態和熱成像數據。
-    *   **待實作:** 根據接收到的數據或控制邏輯，生成並回傳控制指令給 Arduino UNO。
-*   **相機註冊端點 (`/api/register_camera`):**
-    *   **待實作:** 接收來自 Arduino UNO 回報的 ESP32-S3 IP 位址。
 *   **影像串流處理:**
     *   `CameraStreamProcessor`: 負責連接 ESP32-S3 的影像串流，並進行影像處理（例如 OpenCV）。
+
+## 後端 API 設計
+
+本專案的後端 API 設計旨在實現 Arduino 與 Python 後端之間高效、優化的通訊。主要包含以下幾個端點和內部邏輯：
+
+### 1. `POST /api/sync` 端點
+
+*   **用途:** 這是 **Arduino UNO (主控/感測模組)** 向 **Python 後端 (Py Agent)** 發送 **所有常規狀態數據** 的主要入口。同時，它也是後端向 Arduino **回傳控制指令** 的主要出口。
+*   **通訊方向:** **雙向同步** (Arduino 發送數據，後端回傳指令)。
+*   **觸發頻率:** 高頻率，例如每 200 毫秒 (5Hz)。
+*   **傳輸內容 (Arduino -> 後端):**
+    *   `s` (status_byte): `uint8_t`，壓縮後的車輛狀態（電池、感測器健康、錯誤、LED 狀態）。
+    *   `v` (voltage): `int`，電池電壓，單位為毫伏 (mV)，例如 `785` 代表 `7.85V`。
+    *   `t` (thermal_matrix): `int[]`，可選，AMG8833 熱成像數據（64 個整數，每個值為實際溫度乘以 100），每秒發送一次。
+*   **回傳內容 (後端 -> Arduino):**
+    *   `c` (command_byte): `uint8_t`，壓縮後的控制指令（例如蜂鳴器、LED 覆蓋）。
+    *   `m` (motor_speed): `int`，馬達速度（-100 到 100）。
+    *   `d` (direction_angle): `int`，方向角度（0-359 度）。
+    *   `a` (servo_angle): `int`，舵機角度（0-180 度）。
+*   **關鍵特性:** 這是為了解決「排隊現象」而設計的 **融合通訊 (Combined Communication)** 端點。它將數據上報和指令獲取合併為一次 HTTP 請求-回應循環，極大地提高了通訊效率。
+
+### 2. `POST /api/register_camera` 端點
+
+*   **用途:** 這是 **Arduino UNO** 向 **Python 後端** 報告 **ESP32-S3 視覺模組的 IP 位址** 的專用入口。
+*   **通訊方向:** **單向** (Arduino 發送數據，後端接收並儲存)。
+*   **觸發頻率:** 低頻率，通常只在系統啟動時，或者當 ESP32-S3 的 IP 位址發生變化時才觸發。
+*   **傳輸內容 (Arduino -> 後端):**
+    *   `i` (ip_address): `string`，ESP32-S3 視覺模組的 IP 位址，例如 `"192.168.1.105"`。
+*   **回傳內容 (後端 -> Arduino):**
+    *   通常只回傳一個簡單的成功狀態 (例如 HTTP 200 OK)，不需要回傳複雜的指令。
+*   **關鍵特性:** 實現了 ESP32-S3 IP 位址的 **自動發現和註冊**。後端不需要硬編碼 ESP32-S3 的 IP，而是由 Arduino 動態告知。
+
+### 3. 指令生成邏輯
+
+*   **用途:** 這不是一個 API 端點，而是 **Python 後端內部** 的一個 **功能模組**。它的職責是根據各種輸入（例如：使用者遙控指令、影像分析結果、熱成像數據分析結果、車輛狀態等），來 **計算並決定** 應該回傳給 Arduino 的具體控制指令。
+*   **通訊方向:** **內部邏輯**，不涉及直接的 HTTP 通訊。
+*   **觸發頻率:** 根據後端應用邏輯的需要，可能在每次收到 `/api/sync` 請求時觸發，或者在使用者發出遙控指令時觸發。
+*   **輸入:** 來自 `/api/sync` 的 Arduino 狀態數據、來自影像串流的分析結果、使用者輸入等。
+*   **輸出:** 準備好要回傳給 Arduino 的控制指令（例如馬達速度、方向、舵機角度、`command_byte`）。
+*   **關鍵特性:** 這是實現車輛「智慧」和「自主」行為的核心。它將所有感測器數據和使用者意圖轉化為具體的硬體操作。
 
 ## 設定與運行
 
@@ -127,6 +162,26 @@ graph TD
     python main.py
     ```
     伺服器將在 `http://0.0.0.0:8000` 上啟動。
+
+### 測試腳本
+
+專案包含位於 `test_script/` 目錄下的 Bash 腳本，用於驗證 API 端點。您需要確保腳本具有執行權限 (`chmod +x <script_name>`)，然後直接運行它們。
+
+*   **`test_sync_api.sh`:**
+    *   **用途:** 測試 `POST /api/sync` 端點，模擬 Arduino 發送狀態和熱成像數據。
+    *   **使用方法:** 在終端機中導航到 `test_script/` 目錄，然後直接執行 `./test_sync_api.sh`。
+
+### 測試腳本
+
+專案包含位於 `test_script/` 目錄下的 Bash 腳本，用於驗證 API 端點。您需要確保腳本具有執行權限 (`chmod +x <script_name>`)，然後直接運行它們。
+
+*   **`test_sync_api.sh`:**
+    *   **用途:** 測試 `POST /api/sync` 端點，模擬 Arduino 發送狀態和熱成像數據。
+    *   **使用方法:** 在終端機中導航到 `test_script/` 目錄，然後直接執行 `./test_sync_api.sh`。
+
+*   **`test_register_camera_api.sh`:**
+    *   **用途:** 測試 `POST /api/register_camera` 端點，模擬 Arduino 發送 ESP32-S3 的 IP 位址。
+    *   **使用方法:** 在終端機中導航到 `test_script/` 目錄，然後直接執行 `./test_register_camera_api.sh`。
 
 ### 燒錄韌體
 
