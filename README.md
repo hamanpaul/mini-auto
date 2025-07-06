@@ -140,6 +140,32 @@ graph TD
 *   **輸出:** 準備好要回傳給 Arduino 的控制指令（例如馬達速度、方向、舵機角度、`command_byte`）。
 *   **關鍵特性:** 這是實現車輛「智慧」和「自主」行為的核心。它將所有感測器數據和使用者意圖轉化為具體的硬體操作。
 
+**框架化說明：**
+
+為了實現指令生成邏輯的模組化和可擴充性，我們引入了「控制模式」的概念，並建立了以下框架：
+
+1.  **定義控制模式 (`ControlMode` Enum):**
+    *   在 `apis/vehicle_api.py` 中，定義了一個 Python `Enum` (`ControlMode`) 來明確車輛可以處於的不同控制模式，例如 `MANUAL` (手動控制)、`AVOIDANCE` (避障模式)、`AUTONOMOUS` (自主導航模式)。
+    *   新增全域變數 `current_control_mode`，預設為 `MANUAL`。
+
+2.  **新增模式切換 API (`POST /api/set_control_mode`):**
+    *   實作了新的 API 端點 `POST /api/set_control_mode`，允許外部應用程式切換車輛的控制模式。
+    *   **測試腳本:** `test_script/test_set_control_mode_api.sh`。
+
+3.  **重構 `sync_data` 函式中的指令生成部分:**
+    *   `sync_data` 函式（`POST /api/sync` 的處理函式）現在根據 `current_control_mode` 的值，動態呼叫不同的內部輔助函式來生成指令。
+    *   例如，如果模式是 `MANUAL`，則呼叫 `_generate_manual_commands()`；如果是 `AVOIDANCE`，則呼叫 `_generate_avoidance_commands()`。
+
+4.  **建立指令生成輔助函式框架:**
+    *   `_generate_manual_commands()`: 已實作，回傳 `current_manual_motor_speed` 等手動控制指令。
+    *   `_generate_avoidance_commands()`: **佔位函式**，預留未來實作避障邏輯的空間。它將接收 Arduino 數據（如熱成像）和視覺分析結果作為輸入。
+    *   `_generate_autonomous_commands()`: **佔位函式**，預留未來實作更複雜自主導航邏輯的空間。
+
+5.  **更新 GUI 數據接口:**
+    *   `GET /api/latest_data` 端點已更新，會回傳 `current_control_mode` 的值，以便 GUI 可以顯示當前車輛的控制模式。
+
+這個框架為未來整合影像分析和更複雜的自主行為提供了堅實的擴充基礎。
+
 ## 設定與運行
 
 ### Wi-Fi 設定注意事項
@@ -182,6 +208,14 @@ graph TD
 *   **`test_register_camera_api.sh`:**
     *   **用途:** 測試 `POST /api/register_camera` 端點，模擬 Arduino 發送 ESP32-S3 的 IP 位址。
     *   **使用方法:** 在終端機中導航到 `test_script/` 目錄，然後直接執行 `./test_register_camera_api.sh`。
+
+*   **`test_manual_control_api.sh`:**
+    *   **用途:** 測試 `POST /api/manual_control` 端點，用於設定車輛的手動控制指令（馬達、方向、舵機、指令字節）。這些指令將會被 `/api/sync` 端點回傳給 Arduino。
+    *   **使用方法:** 在終端機中導航到 `test_script/` 目錄，然後執行 `./test_manual_control_api.sh <motor_speed> <direction_angle> <servo_angle> <command_byte>`。例如：`./test_manual_control_api.sh 50 0 90 0` (前進，速度50)。
+
+*   **`test_set_control_mode_api.sh`:**
+    *   **用途:** 測試 `POST /api/set_control_mode` 端點，用於切換車輛的控制模式（`manual`, `avoidance`, `autonomous`）。
+    *   **使用方法:** 在終端機中導航到 `test_script/` 目錄，然後執行 `./test_set_control_mode_api.sh <mode>`。例如：`./test_set_control_mode_api.sh avoidance` (設定為避障模式)。
 
 ### 燒錄韌體
 
