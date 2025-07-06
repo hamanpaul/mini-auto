@@ -715,12 +715,40 @@ void syncWithServer() {
     // Update LED status based on processed commands or internal state
     // This is where the LED status in status_byte (Bit 6 & 7) would be determined
     // based on the priority logic (connected, error, busy, idle).
-    // For now, we'll just set it based on a simple rule.
-    // setLedStatus(getLedStatusCode(true, error_code, false)); // Example
+    
+    // Determine internal LED state
+    bool is_busy = false; // TODO: Implement actual busy state tracking
+    uint8_t internal_led_code = getLedStatusCode(g_is_wifi_connected, error_code, is_busy);
 
-  } else {
+    // Extract LED override from command_byte (Bit 2 & 3)
+    uint8_t override_led_code = (command_byte >> 2) & 0b00000011; // Get Bit 2 & 3
+
+    uint8_t final_led_code;
+
+    // Apply LED priority logic
+    if (!g_is_wifi_connected) { // Priority 1: Not Connected
+      final_led_code = 0; // Force Off
+    } else if (override_led_code != 0) { // Priority 2: Backend Override
+      final_led_code = override_led_code;
+    } else { // Priority 3: Internal Status
+      final_led_code = internal_led_code;
+    }
+
+    setLedStatus(final_led_code); // Set the actual LED color
+
+    // Update status_byte with the final LED code that is actually being displayed
+    status_byte &= ~((1 << 6) | (1 << 7)); // Clear Bit 6 & 7
+    status_byte |= (final_led_code << 6); // Set Bit 6 & 7
+
+  } else { // No response or HTTP POST failed.
     Serial.println("No response or HTTP POST failed.");
     g_communication_error = true; // Set communication error
+
+    // If communication fails, force LED to Off (Priority 1: Not Connected)
+    setLedStatus(0); 
+    // Update status_byte with the final LED code (Off)
+    status_byte &= ~((1 << 6) | (1 << 7)); // Clear Bit 6 & 7
+    status_byte |= (0 << 6); // Set Bit 6 & 7 to 00 (Off)
   }
   Serial.println("---------------------------");
 }
