@@ -70,6 +70,9 @@
 #include <Arduino_JSON.h>
 #include <FastLED.h>
 
+// --- I2C Slave Addresses ---
+#define ESP32_I2C_SLAVE_ADDRESS 0x53 // As per GEMINI.md
+
 // --- Sensor Objects ---
 Melopero_AMG8833 sensor;
 
@@ -269,6 +272,31 @@ uint8_t getLedStatusCode(bool is_wifi_connected, uint8_t current_error_code, boo
 }
 
 /**
+ * @brief Requests the ESP32-S3's IP address via I2C.
+ * @return The IP address as a String, or an empty string if failed.
+ */
+String getEsp32IpAddress() {
+  String ipAddress = "";
+  Wire.requestFrom(ESP32_I2C_SLAVE_ADDRESS, 16); // Request up to 16 bytes (max IP string length)
+
+  long startTime = millis();
+  while (Wire.available() && (millis() - startTime < 100)) { // Read within 100ms timeout
+    char c = Wire.read();
+    ipAddress += c;
+  }
+  
+  // Basic validation: check if it looks like an IP address
+  if (ipAddress.length() > 7 && ipAddress.indexOf(".") != -1) {
+    Serial.print("Received ESP32 IP via I2C: ");
+    Serial.println(ipAddress);
+    return ipAddress;
+  } else {
+    Serial.println("Failed to get valid ESP32 IP via I2C.");
+    return "";
+  }
+}
+
+/**
  * @brief Sets the LED color based on a 2-bit status code.
  * @param led_code 2-bit code: 00=Off, 01=Green, 10=Red, 11=Blue.
  */
@@ -395,6 +423,14 @@ void syncWithServer() {
   JSONVar payload;
   payload["s"] = status_byte;
   payload["v"] = g_current_voltage_mv;
+
+  // ESP32-S3 IP Address (sent periodically or on change)
+  static String esp32_ip = "";
+  String current_esp32_ip = getEsp32IpAddress();
+  if (current_esp32_ip != "" && current_esp32_ip != esp32_ip) {
+    esp32_ip = current_esp32_ip;
+    payload["i"] = esp32_ip; // "i" for IP
+  }
 
   // Thermal Matrix (Optional: sent every 1 second)
   static unsigned long lastThermalSendTime = 0;
