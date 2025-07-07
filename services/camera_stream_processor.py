@@ -6,20 +6,39 @@ import threading
 import time
 
 class CameraStreamProcessor:
-    def __init__(self, esp32_cam_ip: str):
-        self.esp32_cam_ip = esp32_cam_ip
-        self.stream_url = f"http://{self.esp32_cam_ip}/stream"
+    def __init__(self):
+        self.esp32_cam_ip = None
+        self.stream_url = None
         self._running = False
         self._thread = None
         self._latest_frame = None
         self._latest_processed_frame = None
         self._lock = threading.Lock() # For thread-safe access to frames
 
+    def update_stream_source(self, esp32_cam_ip: str):
+        if self.esp32_cam_ip == esp32_cam_ip:
+            print(f"Stream IP already set to {esp32_cam_ip}. No change needed.")
+            return
+
+        self.esp32_cam_ip = esp32_cam_ip
+        self.stream_url = f"http://{self.esp32_cam_ip}/stream"
+        print(f"Camera stream source updated to: {self.stream_url}")
+
+        if self._running:
+            print("Stream is running, restarting with new IP...")
+            self.stop()
+            self.start()
+
     def _get_mjpeg_stream(self):
         """
         Connects to an MJPEG stream and yields JPEG frames.
         This method runs in a separate thread.
         """
+        if not self.stream_url:
+            print("Error: Stream URL not set. Cannot start streaming.")
+            self._running = False
+            return
+
         print(f"Connecting to MJPEG stream at: {self.stream_url}")
         try:
             response = requests.get(self.stream_url, stream=True, timeout=5)
@@ -81,13 +100,61 @@ class CameraStreamProcessor:
 
             if frame is not None:
                 # --- Your OpenCV Image Analysis Logic Here ---
-                # Example: Convert to grayscale and detect edges
-                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                edges = cv2.Canny(gray_frame, 100, 200)
+                # Local, low-resource obstacle detection: Brightness Thresholding + Contour Detection
                 
-                # You can store different processed results as needed
+                # Convert to grayscale
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+                # Apply Gaussian blur to reduce noise
+                gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+                # Define ROI (Region of Interest) - focus on the lower half of the image for close obstacles
+                height, width = gray.shape
+                roi_start_row = int(height * 0.5) # Start from middle of the image
+                roi = gray[roi_start_row:height, 0:width]
+
+                # Adaptive Thresholding to detect objects (assuming objects are darker than background)
+                # Adjust blockSize and C based on lighting conditions
+                thresh = cv2.adaptiveThreshold(roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+
+                # Morphological operations to clean up the mask
+                kernel = np.ones((3,3),np.uint8)
+                thresh = cv2.erode(thresh, kernel, iterations = 1)
+                thresh = cv2.dilate(thresh, kernel, iterations = 1)
+
+                # Find contours in the thresholded image
+                contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                obstacle_detected = False
+                obstacle_center_x = -1
+                obstacle_area_ratio = 0.0
+                
+                if contours:
+                    # Find the largest contour (potential obstacle)
+                    largest_contour = max(contours, key=cv2.contourArea)
+                    area = cv2.contourArea(largest_contour)
+                    
+                    # Filter by area (avoid small noise) and position (ensure it's a relevant obstacle)
+                    # Adjust min_area_threshold based on camera view and expected obstacle size
+                    min_area_threshold = 500 # Example: adjust this value
+                    if area > min_area_threshold:
+                        obstacle_detected = True
+                        M = cv2.moments(largest_contour)
+                        if M["m00"] != 0:
+                            obstacle_center_x = int(M["m10"] / M["m00"]) # X-coordinate relative to ROI
+                            # Convert to global frame X-coordinate if needed: obstacle_center_x_global = obstacle_center_x
+                        obstacle_area_ratio = round(area / (roi.shape[0] * roi.shape[1]), 4)
+
+                        # Optionally, draw the contour on the original frame for visualization
+                        # cv2.drawContours(frame[roi_start_row:height, 0:width], [largest_contour], -1, (0, 255, 0), 2)
+
                 with self._lock:
-                    self._latest_processed_frame = edges # Store the processed frame (e.g., edges)
+                    self._latest_processed_frame = frame # Store the original frame for display
+                    self._latest_visual_analysis_results = {
+                        "obstacle_detected": obstacle_detected,
+                        "obstacle_center_x": obstacle_center_x,
+                        "obstacle_area_ratio": obstacle_area_ratio
+                    }
             else:
                 print("Failed to decode frame for processing.")
 
@@ -96,6 +163,9 @@ class CameraStreamProcessor:
 
     def start(self):
         if not self._running:
+            if not self.stream_url:
+                print("Warning: Stream URL not set. Call update_stream_source() first.")
+                return
             print("Starting camera stream processor...")
             self._running = True
             self._thread = threading.Thread(target=self._get_mjpeg_stream)
@@ -120,36 +190,14 @@ class CameraStreamProcessor:
     def get_latest_frame(self):
         """Returns the latest raw frame (JPEG bytes) and its processed version (OpenCV image)."""
         with self._lock:
-            return self._latest_frame, self._latest_processed_frame
+            return self._latest_frame, self._latest_processed_frame, self._latest_visual_analysis_results
 
     def is_running(self):
         return self._running
 
 # Example Usage (for testing this module independently)
 if __name__ == "__main__":
-    # IMPORTANT: Replace with your ESP32-S3-CAM's actual IP address
-    # You can find this in the Arduino Serial Monitor output
-    ESP32_CAM_IP = "YOUR_ESP32_CAM_IP_ADDRESS" # <<<<< CHANGE THIS
-
-    if ESP32_CAM_IP == "YOUR_ESP32_CAM_IP_ADDRESS":
-        print("ERROR: Please update ESP32_CAM_IP with your ESP32-S3-CAM's actual IP address.")
-        print("You can find the IP address in the Arduino Serial Monitor after uploading the sketch.")
-    else:
-        processor = CameraStreamProcessor(ESP32_CAM_IP)
-        processor.start()
-
-        try:
-            while True:
-                raw_frame, processed_frame = processor.get_latest_frame()
-                if processed_frame is not None:
-                    # Display the processed frame (e.g., edges)
-                    cv2.imshow("Processed Frame (Edges)", processed_frame)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
-                time.sleep(0.1) # Don't busy-wait too much
-        except KeyboardInterrupt:
-            print("Interrupted by user.")
-        finally:
-            processor.stop()
-            cv2.destroyAllWindows()
-            print("Exiting.")
+    # This part will be removed or modified as main.py will manage the instance
+    print("This module is intended to be used as part of the main FastAPI application.")
+    print("Please run `python main.py` to start the application.")
+    # Original test code is commented out or removed as it's no longer relevant for direct execution.

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Miniauto Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 800px; margin: auto; }
+        h1 { color: #0056b3; }
+        .section { margin-bottom: 20px; padding: 15px; border: 1px solid #eee; border-radius: 5px; background-color: #fafafa; }
+        .section h2 { margin-top: 0; color: #007bff; }
+        .data-item { margin-bottom: 10px; }
+        .data-label { font-weight: bold; margin-right: 5px; }
+        .thermal-grid { display: grid; grid-template-columns: repeat(8, 30px); grid-template-rows: repeat(8, 30px); gap: 2px; border: 1px solid #ccc; padding: 5px; }
+        .thermal-cell { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 0.7em; background-color: #e0e0e0; border-radius: 3px; }
+        .thermal-cell.hot { background-color: #ff4d4d; color: white; }
+        .thermal-cell.warm { background-color: #ffcc00; }
+        .thermal-cell.cool { background-color: #66b3ff; }
+        .thermal-cell.cold { background-color: #007bff; color: white; }
+    </style>
+</head>
+<body>
+    <div id="app" class="container">
+        <h1>Miniauto Dashboard</h1>
+
+        <div class="section">
+            <h2>最新狀態</h2>
+            <div class="data-item"><span class="data-label">狀態字節 (s):</span> {{ latest_data.s }} ({{ bin(latest_data.s) }})</div>
+            <div class="data-item"><span class="data-label">電壓 (v):</span> {{ latest_data.v / 100 }} V</div>
+            <div class="data-item"><span class="data-label">ESP32 IP (i):</span> {{ latest_data.i || 'N/A' }}</div>
+            <div class="data-item"><span class="data-label">控制模式:</span> {{ latest_data.current_control_mode || 'N/A' }}</div>
+        </div>
+
+        <div class="section" v-if="latest_data.t">
+            <h2>熱成像矩陣</h2>
+            <div class="thermal-grid">
+                <div v-for="row in latest_data.t" :key="row_index" class="thermal-row">
+                    <div v-for="temp in row" :key="col_index" 
+                         :class="['thermal-cell', getTempClass(temp)]">
+                        {{ (temp / 100).toFixed(1) }}°C
+                    </div>
+                </div>
+            </div>
+            <div class="data-item"><span class="data-label">最高溫度:</span> {{ latest_data.thermal_analysis.max_temp }}°C</div>
+            <div class="data-item"><span class="data-label">平均溫度:</span> {{ latest_data.thermal_analysis.avg_temp }}°C</div>
+            <div class="data-item"><span class="data-label">熱點檢測:</span> {{ latest_data.thermal_analysis.hotspot_detected ? '是' : '否' }}</div>
+        </div>
+
+        <div class="section">
+            <h2>視覺分析</h2>
+            <div class="data-item"><span class="data-label">障礙物檢測:</span> {{ latest_data.visual_analysis.obstacle_detected ? '是' : '否' }}</div>
+            <div class="data-item"><span class="data-label">紅色像素百分比:</span> {{ latest_data.visual_analysis.red_percentage }}%</div>
+            <img v-if="latest_data.i" :src="'http://' + latest_data.i + '/stream'" width="320" height="240" alt="ESP32-S3 Stream">
+            <div v-else>等待 ESP32-S3 IP 註冊...</div>
+        </div>
+
+        <div class="section">
+            <h2>最新指令</h2>
+            <div class="data-item"><span class="data-label">指令字節 (c):</span> {{ latest_command.c }} ({{ bin(latest_command.c) }})</div>
+            <div class="data-item"><span class="data-label">馬達速度 (m):</span> {{ latest_command.m }}</div>
+            <div class="data-item"><span class="data-label">方向角度 (d):</span> {{ latest_command.d }}</div>
+            <div class="data-item"><span class="data-label">舵機角度 (a):</span> {{ latest_command.a }}</div>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                latest_data: { s: 0, v: 0, t: null, i: null, current_control_mode: 'N/A', thermal_analysis: { max_temp: 0, min_temp: 0, avg_temp: 0, hotspot_detected: false }, visual_analysis: { obstacle_detected: false, red_percentage: 0 } },
+                latest_command: { c: 0, m: 0, d: 0, a: 0 }
+            },
+            methods: {
+                bin(num) {
+                    if (num === null || num === undefined) return 'N/A';
+                    return '0b' + num.toString(2).padStart(8, '0');
+                },
+                getTempClass(temp) {
+                    const actualTemp = temp / 100;
+                    if (actualTemp > 30) return 'hot';
+                    if (actualTemp > 25) return 'warm';
+                    if (actualTemp > 20) return 'cool';
+                    return 'cold';
+                },
+                fetchData() {
+                    fetch('/api/latest_data')
+                        .then(response => response.json())
+                        .then(data => {
+                            this.latest_data = data.latest_data;
+                            this.latest_command = data.latest_command;
+                        })
+                        .catch(error => console.error('Error fetching data:', error));
+                }
+            },
+            mounted() {
+                this.fetchData();
+                setInterval(this.fetchData, 1000); // 每秒更新一次數據
+            }
+        });
+    </script>
+</body>
+</html>
