@@ -2,3 +2,5 @@ fastapi
 uvicorn
 pytest
 httpx
+jinja2
+opencv-python
