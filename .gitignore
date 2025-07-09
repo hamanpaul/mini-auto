@@ -199,3 +199,4 @@ esp32-camera-repo/
 # Temporary files
 check_imports.py
 test_reports/
+commit_message.txt
