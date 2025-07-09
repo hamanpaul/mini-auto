@@ -13,6 +13,7 @@ class CameraStreamProcessor:
         self._thread = None
         self._latest_frame = None
         self._latest_processed_frame = None
+        self._latest_visual_analysis_results = None
         self._lock = threading.Lock() # For thread-safe access to frames
 
     def update_stream_source(self, esp32_cam_ip: str):

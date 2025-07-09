@@ -63,7 +63,7 @@ async def stream_mjpeg_from_processor():
         while True:
             if not camera_processor.is_running():
                 break
-            raw_frame_bytes, _ = camera_processor.get_latest_frame()
+            raw_frame_bytes, _, _ = camera_processor.get_latest_frame()
             if raw_frame_bytes:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n' +

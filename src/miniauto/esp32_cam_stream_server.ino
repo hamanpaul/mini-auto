@@ -94,7 +94,7 @@ esp_err_t stream_handler(httpd_req_t *req) {
   esp_err_t res = ESP_OK;
   size_t _jpg_buf_len = 0;
   uint8_t *_jpg_buf = NULL;
-  char *part_buf[64];
+  char part_buf[64];
   static int64_t last_frame = 0;
   if (!last_frame) {
     last_frame = esp_timer_get_time();

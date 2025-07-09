@@ -162,13 +162,71 @@ def _generate_avoidance_commands() -> SyncResponse:
     )
 
 def _generate_autonomous_commands() -> SyncResponse:
-    # TODO: 實作自主導航邏輯
-    print("Executing autonomous logic (placeholder)...")
+    print("Executing autonomous logic...")
+    
+    # --- Default command: Stop ---
+    motor_speed = 0
+    direction_angle = 0
+    command_byte = 0
+    servo_angle = 90 # Center servo
+
+    # --- Get Visual Analysis ---
+    visual_analysis = None
+    if camera_processor_instance and camera_processor_instance.is_running():
+        # The third element [2] contains the analysis results
+        visual_analysis = camera_processor_instance.get_latest_frame()[2]
+
+    if not visual_analysis:
+        print("  - Visual analysis not available. Stopping.")
+        return SyncResponse(c=command_byte, m=motor_speed, d=direction_angle, a=servo_angle)
+
+    print(f"  - Visual Analysis: {visual_analysis}")
+
+    # --- Decision Logic ---
+    obstacle_detected = visual_analysis.get("obstacle_detected", False)
+    
+    if obstacle_detected:
+        obstacle_center_x = visual_analysis.get("obstacle_center_x", -1)
+        obstacle_area_ratio = visual_analysis.get("obstacle_area_ratio", 0.0)
+        
+        # Assume frame width is around 320 pixels for this logic
+        # This value might need tuning based on the actual camera resolution
+        frame_width = 320
+        turn_threshold = frame_width / 3 # Divide frame into 3 sections
+
+        print(f"  - Obstacle DETECTED (Center X: {obstacle_center_x}, Area: {obstacle_area_ratio})")
+
+        # Priority 1: Obstacle is very large (close), so back up
+        if obstacle_area_ratio > 0.5:
+            print("  - Action: Obstacle too close! Moving backward.")
+            motor_speed = 100 # Adjust speed as needed
+            direction_angle = 180 # Backward
+        # Priority 2: Obstacle is on the right, so turn left
+        elif obstacle_center_x > (frame_width - turn_threshold):
+            print("  - Action: Obstacle on the right. Turning left.")
+            motor_speed = 120 # Adjust speed as needed
+            direction_angle = 270 # Turn Left
+        # Priority 3: Obstacle is on the left, so turn right
+        elif obstacle_center_x < turn_threshold:
+            print("  - Action: Obstacle on the left. Turning right.")
+            motor_speed = 120 # Adjust speed as needed
+            direction_angle = 90 # Turn Right
+        # Priority 4: Obstacle is in the center, back up slowly
+        else:
+            print("  - Action: Obstacle in center. Moving backward slowly.")
+            motor_speed = 80
+            direction_angle = 180 # Backward
+    else:
+        # --- No Obstacle Detected: Move Forward ---
+        print("  - No obstacle detected. Moving forward.")
+        motor_speed = 150 # Cruise speed
+        direction_angle = 0 # Forward
+
     return SyncResponse(
-        c=current_manual_command_byte,
-        m=current_manual_motor_speed,
-        d=current_manual_direction_angle,
-        a=current_manual_servo_angle
+        c=command_byte,
+        m=motor_speed,
+        d=direction_angle,
+        a=servo_angle
     )
 
 def _analyze_thermal_data(thermal_matrix: List[List[int]]) -> dict:
