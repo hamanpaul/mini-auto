@@ -1,18 +1,9 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Body, Depends, Request
 from pydantic import BaseModel
-from typing import List, Optional
+from enum import Enum
+from typing import Optional, List
 
 router = APIRouter()
-
-# Import the global camera_processor_instance from main.py
-# This will be set by main.py after app initialization
-camera_processor_instance = None 
-
-# 全域變數，用於儲存最新的狀態和指令
-latest_arduino_data = {"s": 0, "v": 0, "t": None, "i": None}
-latest_command_sent = {"c": 0, "m": 0, "d": 0, "a": 0}
-latest_esp32_cam_ip: Optional[str] = None # 儲存最新的 ESP32-S3 IP
-latest_thermal_analysis_results = {"max_temp": 0.0, "min_temp": 0.0, "avg_temp": 0.0, "hotspot_detected": False}
 
 # --- 控制模式定義 ---
 class ControlMode(str, Enum):
@@ -27,6 +18,13 @@ current_manual_motor_speed: int = 0
 current_manual_direction_angle: int = 0
 current_manual_servo_angle: int = 0
 current_manual_command_byte: int = 0
+
+# 全域變數，用於儲存最新收到的數據和發送的指令
+latest_arduino_data: Optional[dict] = None
+latest_command_sent: Optional[dict] = None
+latest_esp32_cam_ip: Optional[str] = None
+latest_thermal_analysis_results: Optional[dict] = None
+camera_processor_instance = None # CameraStreamProcessor instance
 
 # 定義 /api/sync 請求的數據模型
 class SyncRequest(BaseModel):
@@ -156,12 +154,22 @@ def _generate_avoidance_commands() -> SyncResponse:
     # 讀取 latest_arduino_data (例如熱成像) 和 CameraStreamProcessor 的分析結果
     # 根據邏輯生成馬達/舵機指令
     print("Executing avoidance logic (placeholder)...")
-    return SyncResponse() # 預設回傳停止指令
+    return SyncResponse(
+        c=current_manual_command_byte,
+        m=current_manual_motor_speed,
+        d=current_manual_direction_angle,
+        a=current_manual_servo_angle
+    )
 
 def _generate_autonomous_commands() -> SyncResponse:
     # TODO: 實作自主導航邏輯
     print("Executing autonomous logic (placeholder)...")
-    return SyncResponse() # 預設回傳停止指令
+    return SyncResponse(
+        c=current_manual_command_byte,
+        m=current_manual_motor_speed,
+        d=current_manual_direction_angle,
+        a=current_manual_servo_angle
+    )
 
 def _analyze_thermal_data(thermal_matrix: List[List[int]]) -> dict:
     # Convert int*100 to float temperatures

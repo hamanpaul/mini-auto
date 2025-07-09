@@ -1,0 +1,446 @@
+﻿軟體需求書 (Software Requirements Specification, SRS)
+
+1. 引言 (Introduction)
+
+1.1 目的 (Purpose)
+
+本文件旨在詳細定義麥克納姆輪小車「Miniauto」專案的軟體系統需求。它將作為開發、測試、驗證和維護軟體的基準文檔。
+
+1.2 範圍 (Scope)
+
+本軟體需求書涵蓋了麥克納姆輪小車的嵌入式韌體（Arduino UNO, ESP32）和上位機 Python 應用程式（Py Agent, FastAPI Server, 影像/熱源分析模組）的所有功能和非功能需求。主要功能包括車輛遙控、視覺分析、熱源偵測與警報、以及狀態回報。
+
+flowchart TD
+["Arduino UNO 控制"]
+ subgraph s1
+("四顆馬達")
+        B
+        A["Arduino UNO"]
+("紅外線影像來源")
+        C
+("ESP32 S3 視覺模組")
+        D
+  end
+["Py Agent 應用程式"]
+ subgraph s2
+("串流客戶端：驅動控制 & OpenCV 影像處理")
+        F
+["Py Agent 主控程式"]
+        E
+("紅外線影像分析模組")
+        G
+("Python FastAPI 伺服器")
+        H
+("火災報告與通知服務")
+        I
+("資料庫管理與維護")
+        J
+("API 介面定義")
+        K
+  end
+    A --> B & C
+ 資料傳輸與控制指令 
+    A ----> D
+    E --> F & G & H
+ 影像串流與遙測數據 
+    F ----> D
+ 驅動控制指令 
+    F ----> A
+ 紅外線原始數據分析 
+    G ----> C
+ **偵測到火災** 
+    G ----> I
+ API 溝通 
+    H ----> A
+    H <--> J & K
+
+
+
+
+1.3 目標讀者 (Intended Audience)
+
+本文件主要面向：
+
+韌體開發工程師
+* 
+軟體開發工程師 (Python)
+* 
+測試工程師
+* 
+專案經理
+* 
+硬體設計工程師 (用於理解軟體對硬體的介面需求)
+* 
+1.4 參考文獻 (References)
+
+ 原始程式碼
+* app_control.ino
+硬體規格書 (依據討論已更新版本)
+* 
+專案軟硬體架構圖 (依據討論已更新版本)
+* 
+軟體功能定義與規劃 (依據討論已提供)
+* 
+ESP32-CAM 相關程式碼參考：
+* https://github.com/espressif/esp32-camera/blob/master
+1.5 術語與縮寫 (Definitions, Acronyms, and Abbreviations)
+
+ Software Requirements Specification (軟體需求書)
+* SRS:
+ Microcontroller Unit (微控制器單元)
+* MCU:
+ Application Programming Interface (應用程式介面)
+* API:
+ Command Line Interface (命令列介面)
+* CLI:
+ Graphical User Interface (圖形使用者介面)
+* GUI:
+ 一個用於構建 API 的 Python Web 框架
+* FastAPI:
+ Open Source Computer Vision Library (開源電腦視覺函式庫)
+* OpenCV:
+ Infrared (紅外線)
+* IR:
+ Station Mode (Wi-Fi 工作站模式)
+* STA mode:
+ Service Set Identifier (無線網路名稱)
+* SSID:
+ Pulse Width Modulation (脈衝寬度調變)
+* PWM:
+ General Purpose Input/Output (通用輸入/輸出)
+* GPIO:
+ Inter-Integrated Circuit (積體電路間通訊協定)
+* I2C:
+ Universal Asynchronous Receiver/Transmitter (通用非同步收發傳輸器)
+* UART:
+ Board Support Package (板級支援包)
+* BSP:
+2. 總體描述 (Overall Description)
+
+2.1 產品視角 (Product Perspective)
+
+本軟體是麥克納姆輪小車「Miniauto」系統的核心組成部分，負責控制硬體、處理感測器數據、執行高階邏輯並與使用者介面或其他外部系統互動。它作為一個獨立的軟體單元運作，但需與指定的硬體平台緊密協同。
+
+2.2 產品功能 (Product Functions)
+
+軟體將提供以下核心功能：
+
+車輛運動控制：
+ 實現麥克納姆輪車輛的全向運動（前進、後退、平移、轉向）以及速度調整和重置。
+* 
+視覺數據處理：
+ 從 ESP32-S3 視覺模組獲取影像串流，並進行即時分析。
+* 
+熱源偵測與警報：
+ 分析 IR 熱像儀數據，判斷火災風險等級並觸發警報通知。
+* 
+車輛狀態監測與回報：
+ 監測剩餘電量等車輛狀態並回報給上位機。
+* 
+通訊與介面服務：
+ 提供基於 FastAPI 的 HTTP API 供外部存取，並透過 Wi-Fi 與硬體進行通訊。
+* 
+自動巡航與避障 (未來擴展)：
+ 根據影像分析結果自動規劃路徑和避障。
+* 
+手動控制：
+ 提供鍵盤操作界面供使用者直接控制車輛。
+* 
+2.3 使用者特徵 (User Characteristics)
+
+主要使用者為資深嵌入式韌體工程師，具備 C/C++、Python 編程經驗，熟悉 Arduino 開發環境，並對嵌入式 Linux、OpenWRT (儘管本專案未使用 OpenWRT，但其系統整合原則是參考) 和 CLI 操作有一定了解。
+
+2.4 一般約束 (General Constraints)
+
+硬體依賴：
+ 軟體功能受限於 Arduino UNO、ESP32-S3、TT 馬達、WS2812 LED、蜂鳴器、IR 熱像儀等特定硬體部件及其性能。
+* 
+通訊協議：
+ 硬體與上位機之間主要透過 Wi-Fi (STA mode) 進行通訊，並依賴 HTTP/TCP 協議。
+* 
+開發環境：
+ Arduino IDE/CLI、Python 3.x。
+* 
+函式庫依賴：
+ Python 端依賴 FastAPI, OpenCV；Arduino 端依賴 FastLED, Servo (原版), Ultrasound (原版 - 儘管現在硬體移除，但程式碼中可能殘留或未來需要調整)。
+* 
+Wi-Fi 網路環境：
+ 需穩定連接至 SSID 
+)。
+* Hcedu01 (PW: 035260089
+時間與記憶體限制：
+ 嵌入式韌體需考慮微控制器的處理能力和記憶體限制，避免阻塞操作。
+* 
+2.5 假設與依賴 (Assumptions and Dependencies)
+
+假設所有硬體部件按硬體規格書正確連接並能正常工作。
+* 
+假設 Wi-Fi 網路 (
+) 在小車運行時始終可用且穩定。
+* Hcedu01
+假設上位機 PC 環境能提供足夠的計算資源運行 Python 應用。
+* 
+某些特定功能（如 GUI layout、簡訊通知 API）可能依賴第三方服務或待定開發。
+* 
+3. 特定需求 (Specific Requirements)
+
+3.1 外部介面需求 (External Interface Requirements)
+
+3.1.1 使用者介面 (User Interfaces)
+
+Python GUI (待定)：
+ 提供圖形化介面供使用者進行車輛手動控制、顯示即時影像、顯示車輛狀態、顯示警報狀態。
+* 
+FR-UI-001：
+ GUI 應顯示來自 ESP32-S3 的即時影像串流。
+	* 
+FR-UI-002：
+ GUI 應顯示車輛的剩餘電量、當前模式和運行狀態。
+	* 
+FR-UI-003：
+ GUI 應顯示當前警報狀態（無火、輕微失火、中度失火、嚴重失火）。
+	* 
+FR-UI-004：
+ GUI 應提供鍵盤輸入界面，允許使用者手動控制車輛的前進、後退、平移、轉向、速度調整、重置和原地環景。
+	* 
+FR-UI-005：
+ GUI 應提供按鈕或介面元素，用於重置警報和設定警報等級（輕微/中度/嚴重）。
+	* 
+3.1.2 硬體介面 (Hardware Interfaces)
+
+軟體將與以下硬體部件進行介面：
+
+微控制器 (Arduino UNO)：
+ 透過 UART (USB) 和 Wi-Fi 與上位機溝通。
+* 
+ESP32-S3 視覺模組：
+ 透過 I2C (地址 
+) 與 Arduino UNO 介面，並作為 Wi-Fi 客戶端。
+* 0x53
+TT 馬達 (HY3722-130) *4：
+ 透過 Arduino UNO 的 PWM (9, 6, 11, 10) 和數位輸出腳位 (12, 7, 13, 8) 進行控制。
+* 
+WS2812 RGB LED：
+ 透過 Arduino UNO 的數位腳位 2 進行單線控制。
+* 
+蜂鳴器：
+ 透過 Arduino UNO 的 PWM 腳位 3 進行控制。
+* 
+電源電壓採樣：
+ 透過 Arduino UNO 的類比輸入腳位 A3 讀取。
+* 
+Wi-Fi 模組 (ESP01S)：
+ 透過 UART 與 Arduino UNO 通訊，作為 Wi-Fi 客戶端。
+* 
+3.1.3 軟體介面 (Software Interfaces)
+
+Python FastAPI Server API：
+* 
+提供影像串流 API：
+ 供 Stream Client 或前端讀取。
+	* 
+提供狀態回報 API：
+ 供 Arduino UNO 或其他模組更新狀態。
+	* 
+提供功能設定 API：
+ 供使用者介面或自動控制模組發送控制指令。
+	* 
+OpenCV 函式庫：
+ 用於影像分析與處理。
+* 
+ESP32-CAM 韌體 (參考 GitHub)：
+ 提供影像串流服務。
+* 
+3.1.4 通訊介面 (Communications Interfaces)
+
+Wi-Fi (IEEE 802.11 b/g/n)：
+* 
+模式：
+ 所有 Wi-Fi 連線均為 STA (Station) 模式。
+	* 
+AP 連線：
+ 連接至 SSID 
+，密碼 
+。
+	* Hcedu01035260089
+通訊協定：
+ 主要使用 HTTP/TCP 進行 API 呼叫和影像串流。
+	* 
+Serial (UART)：
+ Arduino UNO 與 PC 之間用於調試和初步通訊。
+* 
+3.2 功能需求 (Functional Requirements)
+
+3.2.1 Python FastAPI 服務 (FR-PY-API)
+
+FR-PY-API-001 (回傳影像)：
+ 應提供一個 HTTP GET API 端點，以 MJPEG 或其他串流格式回傳即時影像串流。
+* 
+FR-PY-API-002 (回報狀態)：
+ 應提供一個 HTTP GET API 端點，回傳 JSON 格式的車輛及警報狀態。
+* 
+FR-PY-API-002.1：
+ 狀態應包含警報等級 (
+)。
+	* NO_FIRE, SLIGHT_FIRE, MODERATE_FIRE, SEVERE_FIRE
+FR-PY-API-002.2：
+ 狀態應包含車輛剩餘電量百分比。
+	* 
+FR-PY-API-003 (設定功能)：
+ 應提供一個 HTTP POST API 端點，接收並處理車輛控制及警報設定指令。
+* 
+FR-PY-API-003.1 (車輛控制)：
+ 支援前進、後退、停止、向左/右平移、左轉/右轉、設定速度、重置車輛狀態、原地環景。
+	* 
+FR-PY-API-003.2 (警報控制)：
+ 支援重置警報、設定警報程度（輕微/中度/嚴重）、控制燈號指示。
+	* 
+3.2.2 Python 熱源分析模組 (FR-PY-THM)
+
+FR-PY-THM-001 (數據接收)：
+ 應能從 IR 熱像儀 (透過 FastAPI Server 或 Arduino UNO) 接收 8x8 熱矩陣數據。
+* 
+FR-PY-THM-002 (判讀分析)：
+ 應根據 8x8 熱矩陣數據和 60 度視角進行熱源判讀，識別潛在火災風險。
+* 
+FR-PY-THM-002.1：
+ 應支援使用靜態影像進行熱源判讀邏輯的驗證和校準。
+	* 
+FR-PY-THM-003 (通報機制)：
+ 根據判讀結果觸發相應的通知。
+* 
+FR-PY-THM-003.1：
+ 應能發送簡訊通知 (待整合第三方簡訊服務 API)。
+	* 
+FR-PY-THM-003.2：
+ 應能透過 UI 介面顯示警報訊息。
+	* 
+3.2.3 Python 影像分析及顯示模組 (OpenCV) (FR-PY-IMG)
+
+FR-PY-IMG-001 (影像獲取)：
+ 應能從 ESP32 Stream Server 取得即時影像串流。
+* 
+FR-PY-IMG-002 (自動巡航模式)：
+ 在自動模式下，應分析即時影像識別障礙物和可行駛路徑。
+* 
+FR-PY-IMG-002.1：
+ 應能透過 FastAPI API 向車輛發送控制指令以執行自動巡航和避障。
+	* 
+FR-PY-IMG-003 (手動控制模式)：
+ 應提供一個使用者界面，顯示即時影像並允許使用者透過鍵盤輸入操控車輛。
+* 
+FR-PY-IMG-004 (狀態顯示)：
+ 應能從 FastAPI Server 讀取並顯示車輛的即時狀態。
+* 
+3.2.4 Python GUI Layout 定義 (FR-PY-GUI-TBD)
+
+FR-PY-GUI-TBD-001：
+ 待後續階段定義具體的圖形使用者介面佈局和元素。
+* 
+3.2.5 Arduino - ESP32 視覺模組韌體 (FR-ARD-ESP32)
+
+FR-ARD-ESP32-001 (Wi-Fi 連線)：
+ 韌體啟動後應自動連接到 Wi-Fi 網路 (SSID: 
+)，並設定為 STA mode。
+* Hcedu01, PW: 035260089
+FR-ARD-ESP32-002 (影像串流)：
+ 應架設一個簡單的影像串流伺服器，將 ESP32-S3 攝像頭捕獲的影像透過 Wi-Fi 串流至上位機 Python 影像模組。
+* 
+3.2.6 Arduino - UNO 主板韌體 (FR-ARD-UNO)
+
+FR-ARD-UNO-001 (API Server 輪詢 - 控制)：
+ 韌體應定期輪詢上位機 FastAPI Server，獲取最新的車輛控制指令。
+* 
+FR-ARD-UNO-002 (車輛操控)：
+ 依據接收到的指令，精確控制馬達 (PWM 和方向)、RGB LED 和蜂鳴器。
+* 
+FR-ARD-UNO-003 (API Server 輪詢 - 狀態更新)：
+ 韌體應定期採集車輛狀態數據 (如電壓/剩餘電量)。
+* 
+FR-ARD-UNO-004 (狀態回報)：
+ 將採集到的車輛狀態數據發送至上位機 FastAPI Server 進行更新。
+* 
+FR-ARD-UNO-005 (API Server 輪詢 - IR 熱矩陣)：
+ 韌體應定期讀取 IR 熱像儀的 8x8 熱矩陣數據。
+* 
+FR-ARD-UNO-006 (IR 數據回報)：
+ 將 IR 熱矩陣數據發送至上位機 FastAPI Server，供熱源分析模組使用。
+* 
+3.3 效能需求 (Performance Requirements)
+
+PERF-001 (影像串流幀率)：
+ ESP32 影像串流應至少達到 X 幀每秒 (fps)，以確保流暢度 (X 待定，建議至少 15-30 fps)。
+* 
+PERF-002 (IR 數據更新頻率)：
+ IR 熱像儀數據更新頻率應至少為 10Hz。
+* 
+PERF-003 (控制響應時間)：
+ 從上位機發送控制指令到車輛執行動作的延遲應在 Y 毫秒 (ms) 之內 (Y 待定，建議 < 200ms)。
+* 
+PERF-004 (API 輪詢頻率)：
+ Arduino UNO 輪詢 API Server 的頻率應確保車輛狀態和控制指令的即時性 (建議每 Z 毫秒一次，Z 待定)。
+* 
+3.4 設計約束 (Design Constraints)
+
+DSGN-001 (程式碼風格)：
+ C/C++ 韌體程式碼應偏好簡潔且具描述性的 C 語法，附有內嵌註解；儘可能使用基礎語法實作，避免過度依賴外部函式庫。
+* 
+DSGN-002 (系統整合原則)：
+ 軟體設計應優先使用各平台原生的機制進行功能實現。
+* 
+DSGN-003 (記憶體效率)：
+ 狀態/指令處理應盡可能使用 bitmap 表示法以節省嵌入式系統記憶體。
+* 
+DSGN-004 (錯誤修正策略)：
+ 錯誤修正應以最小影響範圍處理，考慮使用 patch 方式，避免直接修改原始碼。
+* 
+DSGN-005 (模組化設計)：
+ 軟體應設計為高度模組化，以便於維護、測試和功能擴展。
+* 
+DSGN-006 (資源優化)：
+ 嵌入式韌體需特別注意記憶體和處理器資源的優化使用。
+* 
+3.5 軟體系統屬性 (Software System Attributes)
+
+安全性 (Security)：
+* 
+ATTR-SEC-001：
+ 軟體在任何階段都不得產生、儲存或顯示任何敏感資訊（如 tokens, keys, passwords, 個人資料）。
+	* 
+ATTR-SEC-002：
+ 軟體不得嘗試連結或利用個人帳號。
+	* 
+ATTR-SEC-003：
+ 所有可能改變系統狀態的 shell 指令都必須伴隨潛在風險說明。
+	* 
+可靠性 (Reliability)：
+* 
+ATTR-REL-001：
+ 軟體應能長時間穩定運行，不易崩潰或產生未預期的行為。
+	* 
+ATTR-REL-002：
+ 異常情況（如 Wi-Fi 斷線、感測器讀數異常）應有適當的錯誤處理機制。
+	* 
+可用性 (Availability)：
+* 
+ATTR-AVA-001：
+ 軟體應具備高可用性，快速響應使用者操作及硬體事件。
+	* 
+可維護性 (Maintainability)：
+* 
+ATTR-MAI-001：
+ 程式碼應具備良好的可讀性，易於理解、修改和擴展。
+	* 
+ATTR-MAI-002：
+ 軟體設計應遵循最小化修改範圍的原則。
+	* 
+可攜性 (Portability)：
+* 
+ATTR-POR-001：
+ 儘可能使用標準函式庫和通用設計模式，以提高未來向其他平台移植的可能性。
+	* 
+3.6 追溯性 (Traceability)
+
+所有需求都應能追溯到其來源（使用者需求、市場需求、技術約束等），並與對應的設計模組、程式碼實現和測試案例建立關聯。
+
+

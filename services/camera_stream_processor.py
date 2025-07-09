@@ -67,9 +67,7 @@ class CameraStreamProcessor:
                 b = bytes_data.find(b'--' + boundary.encode('utf-8'), a + len(boundary) + 2)
                 
                 while a != -1 and b != -1:
-                    jpg_start = bytes_data.find(b'
-
-', a) + 4
+                    jpg_start = bytes_data.find(b'\r\n\r\n', a) + 4
                     if jpg_start != -1 and jpg_start < b:
                         jpg_frame_bytes = bytes_data[jpg_start:b]
                         

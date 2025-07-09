@@ -141,8 +141,6 @@ test_report.log
 *.sym
 *.lib
 *.out
-
-# Project files
 *.prj
 *.mk
 *.dep
@@ -197,3 +195,7 @@ esp32-camera-repo/
 
 # VSCode
 .vscode/
+
+# Temporary files
+check_imports.py
+test_reports/
