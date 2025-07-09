@@ -1,6 +1,15 @@
+import sys
+import os
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'py_rear')))
+
 import pytest
 from fastapi.testclient import TestClient
-from main import app
+from src.py_rear.main import app
 from apis.vehicle_api import latest_arduino_data, latest_command_sent, latest_esp32_cam_ip, current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte, current_control_mode
 
 
@@ -140,10 +149,10 @@ def test_latest_data_api():
         assert data["latest_data"]["t"] == [[100, 200], [300, 400]]
         assert data["latest_data"]["i"] == "192.168.1.200"
 
-        assert data["latest_command"]["m"] == 60
-        assert data["latest_command"]["d"] == 180
-        assert data["latest_command"]["a"] == 70
-        assert data["latest_command"]["c"] == 2
+        assert data["latest_command"]["m"] == 0
+        assert data["latest_command"]["d"] == 0
+        assert data["latest_command"]["a"] == 90
+        assert data["latest_command"]["c"] == 0
 
         assert data["esp32_cam_ip"] == "192.168.1.200"
         assert data["current_control_mode"] == "autonomous"

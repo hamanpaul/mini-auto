@@ -4,6 +4,8 @@ from fastapi import FastAPI
 import os
 import importlib
 import asyncio
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 # Import the CameraStreamProcessor
 from services.camera_stream_processor import CameraStreamProcessor
@@ -23,16 +25,12 @@ camera_processor_instance: CameraStreamProcessor = None
 @app.on_event("startup")
 async def startup_event():
     global camera_processor_instance
-    if ESP32_CAM_IP == "YOUR_ESP32_CAM_IP_ADDRESS":
-        print("WARNING: ESP32_CAM_IP is not set in main.py. Camera stream processing will not start.")
-        print("Please update ESP32_CAM_IP with your ESP32-S3-CAM's actual IP address.")
-    else:
-        camera_processor_instance = CameraStreamProcessor(ESP32_CAM_IP)
-        # Assign the instance to the apis.camera module
-        apis.camera.camera_processor = camera_processor_instance
-        # Start the processor in the background
-        # It will only start fetching frames when /camera/start is called
-        # camera_processor_instance.start() # We will start it via API endpoint
+    camera_processor_instance = CameraStreamProcessor()
+    # Assign the instance to the apis.camera module
+    apis.camera.camera_processor = camera_processor_instance
+    # Start the processor in the background
+    # It will only start fetching frames when /camera/start is called
+    # camera_processor_instance.start() # We will start it via API endpoint
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -40,10 +38,10 @@ async def shutdown_event():
         camera_processor_instance.stop()
 
 # Dynamically import all routes from the apis directory
-apis_dir = "apis"
+apis_dir = os.path.join(os.path.dirname(__file__), "apis")
 for filename in os.listdir(apis_dir):
     if filename.endswith(".py") and filename != "__init__.py":
-        module_name = f"{apis_dir}.{filename[:-3]}"
+        module_name = f"src.py_rear.apis.{filename[:-3]}"
         # Import the module
         module = importlib.import_module(module_name)
         # Register the router

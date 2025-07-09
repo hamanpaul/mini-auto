@@ -53,7 +53,7 @@
 
 3.  **Python 後端 (`main.py`):**
     *   **`POST /api/sync` 端點**：實作接收 Arduino 數據 (status_byte, voltage, thermal_matrix) 的邏輯。 ✅
-    *   **`POST /api/register_camera` 端點**：實作接收 Arduino 回報的 ESP32-S3 IP 位址的邏輯。 ✅
+    *   **`POST /api/register_camera` 端點**：實作接收 Arduino 回報的 ESP32-S3 IP 位址的邏9輯。 ✅
     *   **指令生成邏輯**：根據接收到的數據或使用者輸入，生成並回傳控制指令 (motor speed, direction, servo angle, command byte)。
         *   **框架化完成** (引入控制模式、模式切換 API、指令生成輔助函式框架)。 ✅
         *   **手動控制已實作** (`_generate_manual_commands()`)。 ✅
@@ -76,3 +76,7 @@
 5.  **Python 後端 (`main.py`):**
     *   **影像串流處理**：修改 `CameraStreamProcessor`，使其使用動態註冊的 ESP32-S3 IP 位址來開啟影像串流，並進行 OpenCV 處理。 ✅
     *   **控制決策邏輯**：實作基於熱成像、視覺分析或其他數據的自動控制決策邏輯。
+
+**第五階段：建構與測試 (Build & Test)**
+
+6.  **Arduino 程式碼建構**：建構 Arduino UNO 和 ESP32 程式碼。 待辦 ⏳

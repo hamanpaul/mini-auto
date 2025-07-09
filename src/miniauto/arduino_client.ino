@@ -585,22 +585,17 @@ void syncWithServer() {
 
   // --- 1. Collect Status Data ---
   uint8_t status_byte = 0;
+  int statusCode = 0;
+  uint8_t command_byte = 0;
 
   // Battery Level (Bit 0 & 1)
   uint8_t battery_code = getBatteryLevelCode();
   status_byte |= battery_code; // Directly set Bit 0 & 1
 
-  // Thermal Sensor Status (Bit 2)
-  // Check thermal sensor error during update
-  if (statusCode != 0) {
-    g_thermal_sensor_error = true;
-  } else {
-    g_thermal_sensor_error = false;
-  }
-  if (!g_thermal_sensor_error) status_byte |= (1 << 2);
+  // Get ESP32 IP address
+  String current_esp32_ip = getEsp32IpAddress();
 
   // Vision Module Status (Bit 3)
-  // Check vision module error during IP retrieval
   if (current_esp32_ip == "") {
     g_vision_module_error = true;
   } else {
@@ -608,36 +603,16 @@ void syncWithServer() {
   }
   if (!g_vision_module_error) status_byte |= (1 << 3);
 
-  // Error Code (Bit 4 & 5)
-  uint8_t error_code = getErrorCode();
-  status_byte |= (error_code << 4); // Shift error code to Bit 4 & 5
-
-  // LED Status (Bit 6 & 7) - Determined by priority, will be set after processing commands
-  // For now, we'll send a placeholder or current internal LED state.
-  // The actual LED color will be set based on the command from the server or internal logic.
-  // We'll update this part after command processing.
-  uint8_t current_led_status_code = 0; // Placeholder for now
-  status_byte |= (current_led_status_code << 6); // Shift LED status to Bit 6 & 7
-
   // --- 2. Build JSON Payload ---
   JSONVar payload;
-  payload["s"] = status_byte;
-  payload["v"] = g_current_voltage_mv;
-
-  // ESP32-S3 IP Address (sent periodically or on change)
-  static String esp32_ip = "";
-  // String current_esp32_ip = getEsp32IpAddress(); // Already called above
-  if (current_esp32_ip != "" && current_esp32_ip != esp32_ip) {
-    esp32_ip = current_esp32_ip;
-    payload["i"] = esp32_ip; // "i" for IP
-  }
-
+  
   // Thermal Matrix (Optional: sent every 1 second)
   static unsigned long lastThermalSendTime = 0;
   const unsigned long THERMAL_SEND_INTERVAL = 1000; // 1 second
   if (millis() - lastThermalSendTime >= THERMAL_SEND_INTERVAL) {
-    int statusCode = sensor.updatePixelMatrix();
+    statusCode = sensor.updatePixelMatrix();
     if (statusCode == 0) {
+      g_thermal_sensor_error = false;
       JSONArray matrix = JSONArray();
       for (int i = 0; i < 8; i++) {
         JSONArray row = JSONArray();
@@ -653,6 +628,27 @@ void syncWithServer() {
       Serial.println(sensor.getErrorDescription(statusCode));
       g_thermal_sensor_error = true; // Set thermal sensor error
     }
+  }
+
+  // Thermal Sensor Status (Bit 2)
+  if (!g_thermal_sensor_error) status_byte |= (1 << 2);
+
+  // Error Code (Bit 4 & 5)
+  uint8_t error_code = getErrorCode();
+  status_byte |= (error_code << 4); // Shift error code to Bit 4 & 5
+
+  // LED Status (Bit 6 & 7) - Placeholder for now
+  uint8_t current_led_status_code = 0; 
+  status_byte |= (current_led_status_code << 6);
+
+  payload["s"] = status_byte;
+  payload["v"] = g_current_voltage_mv;
+
+  // ESP32-S3 IP Address (sent periodically or on change)
+  static String esp32_ip = "";
+  if (current_esp32_ip != "" && current_esp32_ip != esp32_ip) {
+    esp32_ip = current_esp32_ip;
+    payload["i"] = esp32_ip; // "i" for IP
   }
 
   String jsonString = JSON.stringify(payload);
@@ -676,79 +672,60 @@ void syncWithServer() {
     }
 
     // --- Process Commands ---
-    // Command Byte (c)
     if (responseJson.hasOwnProperty("c")) {
-      uint8_t command_byte = (uint8_t)((int)responseJson["c"]);
+      command_byte = (uint8_t)((int)responseJson["c"]);
       
       // Extract buzzer control (Bit 0 & 1)
-      uint8_t buzzer_code = command_byte & 0b00000011; // Get Bit 0 & 1
+      uint8_t buzzer_code = command_byte & 0b00000011;
       controlBuzzer(buzzer_code);
       Serial.print("Command byte: ");
       Serial.println(command_byte);
-
-      // TODO: Implement LED override based on command_byte (Bit 2 & 3)
     }
 
-    // Motor Speed (m)
     if (responseJson.hasOwnProperty("m")) {
       int motor_speed = (int)responseJson["m"];
-      // Direction Angle (d)
-      int direction_angle = 0; // Default to 0
+      int direction_angle = 0;
       if (responseJson.hasOwnProperty("d")) {
         direction_angle = (int)responseJson["d"];
       }
-      Velocity_Controller(direction_angle, motor_speed, 0); // Control motors
+      Velocity_Controller(direction_angle, motor_speed, 0);
       Serial.print("Motor speed: ");
       Serial.print(motor_speed);
       Serial.print(", Direction angle: ");
       Serial.println(direction_angle);
     }
 
-    // Servo Angle (a)
     if (responseJson.hasOwnProperty("a")) {
       int servo_angle = (int)responseJson["a"];
-      myservo.write(servo_angle); // Control servo
+      myservo.write(servo_angle);
       Serial.print("Servo angle: ");
       Serial.println(servo_angle);
     }
 
-    // Update LED status based on processed commands or internal state
-    // This is where the LED status in status_byte (Bit 6 & 7) would be determined
-    // based on the priority logic (connected, error, busy, idle).
-    
-    // Determine internal LED state
-    bool is_busy = false; // TODO: Implement actual busy state tracking
+    bool is_busy = false;
     uint8_t internal_led_code = getLedStatusCode(g_is_wifi_connected, error_code, is_busy);
-
-    // Extract LED override from command_byte (Bit 2 & 3)
-    uint8_t override_led_code = (command_byte >> 2) & 0b00000011; // Get Bit 2 & 3
-
+    uint8_t override_led_code = (command_byte >> 2) & 0b00000011;
     uint8_t final_led_code;
 
-    // Apply LED priority logic
-    if (!g_is_wifi_connected) { // Priority 1: Not Connected
-      final_led_code = 0; // Force Off
-    } else if (override_led_code != 0) { // Priority 2: Backend Override
+    if (!g_is_wifi_connected) {
+      final_led_code = 0;
+    } else if (override_led_code != 0) {
       final_led_code = override_led_code;
-    } else { // Priority 3: Internal Status
+    } else {
       final_led_code = internal_led_code;
     }
 
-    setLedStatus(final_led_code); // Set the actual LED color
+    setLedStatus(final_led_code);
 
-    // Update status_byte with the final LED code that is actually being displayed
-    status_byte &= ~((1 << 6) | (1 << 7)); // Clear Bit 6 & 7
-    status_byte |= (final_led_code << 6); // Set Bit 6 & 7
+    status_byte &= ~((1 << 6) | (1 << 7));
+    status_byte |= (final_led_code << 6);
 
-  } else { // No response or HTTP POST failed.
+  } else {
     Serial.println("No response or HTTP POST failed.");
-    g_communication_error = true; // Set communication error
-
-    // If communication fails, force LED to Off (Priority 1: Not Connected)
+    g_communication_error = true;
     setLedStatus(0); 
-    // Update status_byte with the final LED code (Off)
-    status_byte &= ~((1 << 6) | (1 << 7)); // Clear Bit 6 & 7
-    status_byte |= (0 << 6); // Set Bit 6 & 7 to 00 (Off)
+    status_byte &= ~((1 << 6) | (1 << 7));
+    status_byte |= (0 << 6);
   }
   Serial.println("---------------------------");
 }
