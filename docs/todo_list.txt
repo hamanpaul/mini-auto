@@ -60,7 +60,7 @@
         *   **避障邏輯** (`_generate_avoidance_commands()`)：**已實作基本邏輯** (基於錯誤、熱點、視覺障礙物優先級判斷)。 ✅
         *   **自主導航邏輯** (`_generate_autonomous_commands()`)：待實作。
 
-**第三階段：Arduino UNO 硬體控制與狀態更新 (Arduino UNO Hardware Control & Status Update) - 已完成 ✅**
+**第三階段：Arduino UNO 硬體控制與狀態更新 (Arduino UNO Hardware Control & Status Update) - 部分完成 ✅**
 
 4.  **Arduino UNO 端 (主控制器):**
     *   **硬體初始化**：在 `setup()` 中加入馬達、舵機、蜂鳴器等硬體的初始化程式碼。 ✅
@@ -70,13 +70,36 @@
         *   在 `syncWithServer()` 中，根據錯誤碼和連線狀態，動態設定 `status_byte` 中的 LED 狀態位元，並呼叫 `setLedStatus()`。
     *   **蜂鳴器控制**：根據 `command_byte` 中的位元，實作蜂鳴器的鳴響行為。 ✅
     *   **LED 覆蓋控制**：根據 `command_byte` 中的位元，實作 LED 的特殊覆蓋行為 (例如閃爍)。 ✅
+    *   **整合超音波感測器 (Integrate Ultrasonic Sensor):**
+        *   連接 HC-SR04 感測器至數位 I/O 腳位。 待辦 ⏳
+        *   確認 HC-SR04 是使用 I2C 還是 GPIO 介面。 待辦 ⏳
+        *   在韌體中新增讀取距離的函式 (注意 `pulseIn` 超時設定)。 待辦 ⏳
+        *   將距離值加入傳送給後端的 JSON 酬載 (例如 `"u": 55`)。 待辦 ⏳
 
 **第四階段：Python 後端應用邏輯 (Python Backend Application Logic) - 部分完成 ✅**
 
 5.  **Python 後端 (`main.py`):**
     *   **影像串流處理**：修改 `CameraStreamProcessor`，使其使用動態註冊的 ESP32-S3 IP 位址來開啟影像串流，並進行 OpenCV 處理。 ✅
-    *   **控制決策邏輯**：實作基於熱成像、視覺分析或其他數據的自動控制決策邏輯。
+    *   **控制決策邏輯 (感測器融合)**：
+        *   修改 `SyncRequest` Pydantic 模型以接收超音波數據 (`u`)。 待辦 ⏳
+        *   **自主模式 (`AUTONOMOUS`)**:
+            *   基於視覺分析的基礎障礙物閃避 (前進、轉彎、後退)。 ✅
+            *   整合**超音波**與**熱感應**數據至決策邏輯中，實現感測器融合。 待辦 ⏳
+        *   **避障模式 (`AVOIDANCE`)**:
+            *   實作完整的避障模式 (`_generate_avoidance_commands`)，融合視覺、超音波、熱感應等多重感測器數據。 待辦 ⏳
 
 **第五階段：建構與測試 (Build & Test)**
 
 6.  **Arduino 程式碼建構**：建構 Arduino UNO 和 ESP32 程式碼。 待辦 ⏳
+7.  **API 功能排查**：檢查後端 API 是否存在功能重疊或可合併的端點 (例如 `manual_control` 和 `sync` 的指令部分)。 待辦 ⏳
+
+---
+
+### C. 第六階段：重構與優化 (Refactoring & Optimization)
+
+1.  **UNO 端服務發現 (UNO Side Server Discovery):**
+    *   在 Arduino UNO 上實作服務器自動發現機制，以取代目前硬編碼 (hard-coded) 的後端伺服器 IP 位址。
+2.  **Python 路徑管理 (Python Path Management):**
+    *   改用 `pyproject.toml` 和 `pip install -e .` 的方式來管理專案路徑與依賴，解決潛在的 `sys.path` 問題。
+3.  **Arduino 程式碼清理 (Arduino Code Cleanup):**
+    *   全面排查 `app_control.ino` 和 `arduino_client.ino`，移除未被使用的函式 (如 `httpGet`) 和變數，以節省記憶體和提高程式碼清晰度。
