@@ -12,7 +12,7 @@
 
 // --- WiFi Configuration ---
 const char* ssid = "Hcedu01";         // <<<<<<< CHANGE THIS
-const char* password = "YOUR_WIFI_PASSWORD"; // <<<<<<< CHANGE THIS
+const char* password = "035260089"; // <<<<<<< CHANGE THIS
 
 // --- I2C Slave Configuration ---
 #define I2C_SLAVE_ADDRESS 0x53 // As per GEMINI.md

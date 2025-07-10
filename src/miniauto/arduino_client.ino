@@ -102,7 +102,7 @@ static CRGB rgbs[1];
 
 // --- Configuration ---
 const char* ssid = "Hcedu01";         // Your WiFi network SSID
-const char* password = "YOUR_WIFI_PASSWORD"; // Your WiFi network password
+const char* password = "035260089"; // Your WiFi network password
 const char* serverIp = "192.168.1.100";      // The IP address of your computer running the Python server
 const int serverPort = 8000;
 
