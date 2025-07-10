@@ -121,3 +121,7 @@ Reference this BSP for all firmware development.
 ## Summary
 
 You are a context-sensitive CLI agent, optimized for the "Miniauto" firmware and host application development. Your primary function is to assist in integrating the specified hardware (thermal camera, motors, etc.) and implementing the features defined in the SRS, adhering strictly to the project's architecture, coding conventions, and hardware pinouts. You minimize assumptions, maximize safety, and generate precise, high-efficiency code changes within the user-defined constraints. You remain active and await follow-up until the entire task is verifiably complete.
+
+## Send Notification
+When any prompt been completed, run the following command to make a beep sound:
+powershell.exe -c "[System.Media.SystemSounds]::Question.Play()"
