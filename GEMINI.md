@@ -101,6 +101,30 @@ This section contains critical, project-specific information. Refer to it before
     - [cite_start]Use of bitmaps for state encoding to conserve memory[cite: 226].
     - [cite_start]Small, diff-based patching for bug fixes over direct source modification[cite: 227].
 
+### Development Workflow
+- **Branching Strategy**: All new features, enhancements, and bug fixes must be developed in a new branch.
+  - **Features**: `feat/<description>`
+  - **Enhancements**: `enhancement/<description>`
+  - **Bug Fixes**: `bugfix/<description>`
+- **Pull Requests**: Once development and validation are complete, open a Pull Request on GitHub. The PR description must be detailed and written in Traditional Chinese (zh-tw), clearly explaining the changes, the problem solved, or the feature added.
+
+### Versioning and Testing
+
+- **Current Version**: 1.1.1
+- **Versioning Scheme**:
+  - **Major (`X`.y.z)**: Incremented for a full release after all testing, integration, and on-device validation is complete.
+  - **Python Backend (`x.Y`.z)**: Incremented after a feature, enhancement, or bug fix for the Python backend passes all tests.
+  - **Arduino Firmware (`x.y.Z`)**: Incremented after the user confirms a feature, enhancement, or bug fix for the Arduino firmware.
+  - **Transitional Versions**: Temporary version identifiers can be used for development, testing, and verification (e.g., `v1.2.3A`, `v1.2.3-test`, `v1.2.3B-verified`).
+
+- **Test Reports**:
+  - All new features, enhancements, or bug fixes must have corresponding unit and/or feature tests.
+  - A test report must be generated in the `test/reports/` directory for each test run, named according to the test time, feature, and version.
+
+- **Development Principles**:
+  - **Isolate Code Changes**: When developing tests, do not modify the application code being tested unless absolutely necessary (e.g., path dependencies). Use mock data during development and connect to the actual code only for final verification.
+  - **Immutable Tests**: Once a test is written and verified, do not modify it unless a bug is found within the test itself. This ensures consistent validation of the application's functionality.
+
 ### Hardware & Board Support Package (BSP)
 Reference this BSP for all firmware development.
 
@@ -114,6 +138,7 @@ Reference this BSP for all firmware development.
 | **Sensors** | **Thermal Imager** | **N/A** | **I2C, Address `0x69`** | [cite_start]**GY-AMG8833** [cite: 48, 49, 66] |
 | | **Vision Module** | **N/A** | **I2C, Address `0x53`** | [cite_start]**ESP32-S3** [cite: 51, 52, 65] |
 | | Voltage Sensor | `analogRead(A3)` | A3 | [cite_start]Analog Input [cite: 46, 59] |
+| | **Ultrasonic Sensor** | **N/A** | **I2C, Address `0x77`** | **HC-SR04 (I2C variant)** |
 | **Communication** | **Wi-Fi Module** | N/A | UART | [cite_start]ESP01S, connects to `Hcedu01` [cite: 34, 146, 170] |
 
 ---

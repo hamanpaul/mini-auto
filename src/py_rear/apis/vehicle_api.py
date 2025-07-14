@@ -32,6 +32,12 @@ class SyncRequest(BaseModel):
     v: int  # voltage_mv
     t: Optional[List[List[int]]] = None  # thermal_matrix (optional)
     i: Optional[str] = None # esp32_ip (optional)
+    u: Optional[int] = None # ultrasonic_distance_cm (optional)
+    # Manual control fields (optional)
+    m: Optional[int] = None  # motor_speed
+    d: Optional[int] = None  # direction_angle
+    a: Optional[int] = None  # servo_angle
+    c: Optional[int] = None  # command_byte
 
 # 定義 /api/sync 回應的數據模型
 class SyncResponse(BaseModel):
@@ -40,76 +46,72 @@ class SyncResponse(BaseModel):
     d: int = 0  # direction_angle
     a: int = 0  # servo_angle
 
+@router.post("/api/sync")
+async def sync_data(request: SyncRequest) -> SyncResponse:
+    global latest_arduino_data, latest_command_sent, latest_thermal_analysis_results, current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte
+
+    latest_arduino_data = request.dict()
+    print(f"\n--- Received Sync Data ---")
+    print(f"Status: {latest_arduino_data.get('s')}")
+    print(f"Voltage: {latest_arduino_data.get('v')}mV")
+    if latest_arduino_data.get('u') is not None:
+        print(f"Ultrasonic Distance: {latest_arduino_data.get('u')}cm")
+    if latest_arduino_data.get('t') is not None:
+        latest_thermal_analysis_results = _analyze_thermal_data(latest_arduino_data['t'])
+        print(f"Thermal Analysis: {latest_thermal_analysis_results}")
+    print(f"--------------------------")
+
+    # Update manual control global variables if provided in sync request
+    if request.m is not None:
+        current_manual_motor_speed = request.m
+    if request.d is not None:
+        current_manual_direction_angle = request.d
+    if request.a is not None:
+        current_manual_servo_angle = request.a
+    if request.c is not None:
+        current_manual_command_byte = request.c
+
+    # Generate commands based on current control mode
+    if current_control_mode == ControlMode.MANUAL:
+        response_commands = _generate_manual_commands()
+    elif current_control_mode == ControlMode.AVOIDANCE:
+        response_commands = _generate_avoidance_commands()
+    elif current_control_mode == ControlMode.AUTONOMOUS:
+        response_commands = _generate_autonomous_commands()
+    else:
+        response_commands = SyncResponse() # Default to stop
+
+    latest_command_sent = response_commands.dict()
+    return response_commands
+
+# 定義 /api/manual_control 請求的數據模型
+class ManualControlRequest(BaseModel):
+    m: int  # motor_speed
+    d: int  # direction_angle
+    a: int  # servo_angle
+    c: int  # command_byte
+
+@router.post("/api/manual_control")
+async def manual_control(request: ManualControlRequest):
+    global current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte
+    current_manual_motor_speed = request.m
+    current_manual_direction_angle = request.d
+    current_manual_servo_angle = request.a
+    current_manual_command_byte = request.c
+    print(f"\n--- Manual Control Command Received ---")
+    print(f"Motor Speed: {current_manual_motor_speed}")
+    print(f"Direction Angle: {current_manual_direction_angle}")
+    print(f"Servo Angle: {current_manual_servo_angle}")
+    print(f"Command Byte: {current_manual_command_byte}")
+    print(f"---------------------------------------")
+    return {"message": "Manual control command received"}
+
 # 定義 /api/register_camera 請求的數據模型
 class RegisterCameraRequest(BaseModel):
     i: str # esp32_ip
 
-# 定義 /api/manual_control 請求的數據模型
-class ManualControlRequest(BaseModel):
-    m: int = 0  # motor_speed
-    d: int = 0  # direction_angle
-    a: int = 0  # servo_angle
-    c: int = 0  # command_byte
-
-# 定義 /api/set_control_mode 請求的數據模型
 class SetControlModeRequest(BaseModel):
     mode: ControlMode
-
-@router.post("/api/sync", response_model=SyncResponse)
-async def sync_data(request: Request, data: SyncRequest):
-    global latest_arduino_data, latest_command_sent, latest_thermal_analysis_results
-    global current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte
-    global current_control_mode
-
-    # 儲存最新收到的數據
-    latest_arduino_data = data.model_dump()
-
-    print(f"\n--- Received Sync Data ---")
-    print(f"Status Byte (s): {data.s} (Binary: {bin(data.s)})")
-    print(f"Voltage (v): {data.v} mV")
-    if data.t:
-        print(f"Thermal Matrix (t): {data.t}")
-        latest_thermal_analysis_results = _analyze_thermal_data(data.t)
-        print(f"Thermal Analysis: {latest_thermal_analysis_results}")
-    if data.i:
-        print(f"ESP32 IP (i): {data.i}")
-    print(f"Current Control Mode: {current_control_mode.value}")
-    print(f"--------------------------")
-
-    # --- 指令生成邏輯 ---
-    response_command: SyncResponse
-
-    if current_control_mode == ControlMode.MANUAL:
-        response_command = _generate_manual_commands()
-    elif current_control_mode == ControlMode.AVOIDANCE:
-        response_command = _generate_avoidance_commands()
-    elif current_control_mode == ControlMode.AUTONOMOUS:
-        response_command = _generate_autonomous_commands()
-    else:
-        # 預設情況，例如未知模式，回傳停止指令
-        response_command = SyncResponse()
-
-    # 儲存最新發送的指令
-    latest_command_sent = response_command.model_dump()
-
-    return response_command
-
-@router.post("/api/manual_control")
-async def manual_control(control_data: ManualControlRequest):
-    global current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte
-    
-    current_manual_motor_speed = control_data.m
-    current_manual_direction_angle = control_data.d
-    current_manual_servo_angle = control_data.a
-    current_manual_command_byte = control_data.c
-
-    print(f"\n--- Manual Control Command Received ---")
-    print(f"Motor Speed (m): {current_manual_motor_speed}")
-    print(f"Direction Angle (d): {current_manual_direction_angle}")
-    print(f"Servo Angle (a): {current_manual_servo_angle}")
-    print(f"Command Byte (c): {current_manual_command_byte}")
-    print(f"-------------------------------------")
-    return {"message": "Manual control command updated"}
 
 @router.post("/api/set_control_mode")
 async def set_control_mode(request: SetControlModeRequest):
@@ -150,19 +152,25 @@ def _generate_manual_commands() -> SyncResponse:
     )
 
 def _generate_avoidance_commands() -> SyncResponse:
-    # TODO: 實作避障邏輯
-    # 讀取 latest_arduino_data (例如熱成像) 和 CameraStreamProcessor 的分析結果
-    # 根據邏輯生成馬達/舵機指令
-    print("Executing avoidance logic (placeholder)...")
-    return SyncResponse(
-        c=current_manual_command_byte,
-        m=current_manual_motor_speed,
-        d=current_manual_direction_angle,
-        a=current_manual_servo_angle
-    )
+    # 優先讀取超音波感測器數據
+    if latest_arduino_data and latest_arduino_data.get("u") is not None:
+        distance_cm = latest_arduino_data.get("u")
+        if distance_cm < 20:
+            print(f"  - Ultrasonic Obstacle DETECTED ({distance_cm} cm). Moving backward.")
+            return SyncResponse(c=0, m=100, d=180, a=90) # 後退
+
+    # 如果沒有超音波數據或距離足夠，則執行視覺避障
+    return _generate_autonomous_commands()
 
 def _generate_autonomous_commands() -> SyncResponse:
     print("Executing autonomous logic...")
+
+    # --- Priority 1: Ultrasonic Sensor Check ---
+    if latest_arduino_data and latest_arduino_data.get("u") is not None:
+        distance_cm = latest_arduino_data.get("u")
+        if distance_cm < 20:
+            print(f"  - Ultrasonic Obstacle DETECTED ({distance_cm} cm). Moving backward.")
+            return SyncResponse(c=0, m=100, d=180, a=90) # 後退
     
     # --- Default command: Stop ---
     motor_speed = 0

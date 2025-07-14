@@ -13,7 +13,9 @@
 #include <Arduino.h>
 #include "FastLED.h"
 #include <Servo.h>
-#include "Ultrasound.h"
+// #include "Ultrasound.h" // Replaced with I2C version
+#include <Wire.h>
+#include "Ultrasonic_I2C.h"
 
 typedef enum {   
   MODE_NULL,
@@ -98,6 +100,7 @@ void Motors_Set(int8_t Motor_0, int8_t Motor_1, int8_t Motor_2, int8_t Motor_3);
 
 void setup() {
   Serial.begin(9600);
+  Wire.begin(); // Initialize I2C communication
   FastLED.addLeds<WS2812, ledPin, RGB>(rgbs, 1);
   Motor_Init();
   pinMode(servoPin, OUTPUT);
@@ -198,7 +201,7 @@ void Task_Dispatcher(void)
   }
   if(g_mode == MODE_ULTRASOUND_SEND)
   {
-    distance = ultrasound.Filter();   /* 获得滤波器输出值 */
+    distance = ultrasound.getDistance();   /* 獲得I2C超聲波距離 */
     if(distance > 5000)
     {
       distance = 5000;
@@ -306,7 +309,7 @@ void Rgb_Task(void)
   r_data = (uint8_t)atoi(rec_data[1].c_str());  
   g_data = (uint8_t)atoi(rec_data[2].c_str());
   b_data = (uint8_t)atoi(rec_data[3].c_str());
-  ultrasound.Color(r_data,g_data,b_data,r_data,g_data,b_data);
+  // ultrasound.Color(r_data,g_data,b_data,r_data,g_data,b_data); // This function is not available in the new I2C sensor library
 }
 
 /* 电压监测 */
@@ -364,7 +367,7 @@ void Servo_Data_Receive(void)
 /* 避障模式 */
 void Aovid(void)
 {
-  distance = ultrasound.Filter();
+  distance = ultrasound.getDistance();
   if(g_state == 1)
   {
     if(distance < 400)
