@@ -100,6 +100,7 @@ This section contains critical, project-specific information. Refer to it before
     - Independent, modular features (similar to OpenWRT `package/` style).
     - [cite_start]Use of bitmaps for state encoding to conserve memory[cite: 226].
     - [cite_start]Small, diff-based patching for bug fixes over direct source modification[cite: 227].
+    - **Python Path Management:** For Python projects, prefer `pyproject.toml` and `pip install -e .` for managing project paths and dependencies to ensure consistent module imports and avoid `ModuleNotFoundError`.
 
 ### Hardware & Board Support Package (BSP)
 Reference this BSP for all firmware development.

@@ -103,8 +103,8 @@ static CRGB rgbs[1];
 // --- Configuration ---
 const char* ssid = "Hcedu01";         // Your WiFi network SSID
 const char* password = "035260089"; // Your WiFi network password
-const char* serverIp = "192.168.1.100";      // The IP address of your computer running the Python server
-const int serverPort = 8000;
+String g_server_ip = ""; // Dynamically discovered server IP
+int g_server_port = 8000; // Dynamically discovered server port (default to 8000)
 
 // --- Pin Definitions (from app_control.ino) ---
 const static uint8_t buzzerPin = 3;
@@ -133,6 +133,7 @@ bool g_thermal_sensor_error = false; // Track thermal sensor error
 bool g_vision_module_error = false; // Track vision module error
 bool g_motor_error = false; // Track motor error (placeholder for now)
 bool g_communication_error = false; // Track communication error with backend
+bool g_discovery_notified = false; // Track if server discovery has been notified
 
 // --- Function Declarations ---
 void setupEsp01s();
@@ -181,15 +182,7 @@ void setup() {
   setupEsp01s();
 }
 
-void loop() {
-  unsigned long currentTime = millis();
-
-  // Task: Periodically synchronize with server
-  if (currentTime - lastCommandPollTime >= commandPollInterval) {
-    syncWithServer();
-    lastCommandPollTime = currentTime;
-  }
-}
+void loop() {  unsigned long currentTime = millis();  // Task: Periodically synchronize with server  if (currentTime - lastCommandPollTime >= commandPollInterval) {    // Only sync if server IP is known    if (g_server_ip != "") {      syncWithServer();    } else {      Serial.println("Server IP not discovered yet. Waiting for broadcast...");    }    lastCommandPollTime = currentTime;  }  // Task: Check for incoming UDP broadcast messages  while (espSerial.available()) {    String response = espSerial.readStringUntil('\n');    // Look for +IPD (Incoming Packet Data) from ESP-01S    if (response.startsWith("+IPD,")) {      // Example: +IPD,0,20:MINIAUTO_SERVER_IP:192.168.1.100:8000      int firstComma = response.indexOf(',');      int secondComma = response.indexOf(',', firstComma + 1);      int colon = response.indexOf(':', secondComma + 1);      if (firstComma != -1 && secondComma != -1 && colon != -1) {        String data = response.substring(colon + 1);        if (data.startsWith("MINIAUTO_SERVER_IP:")) {          String ipAndPort = data.substring(data.indexOf(':') + 1);          int lastColon = ipAndPort.lastIndexOf(':');          if (lastColon != -1) {            String discoveredIp = ipAndPort.substring(0, lastColon);            int discoveredPort = ipAndPort.substring(lastColon + 1).toInt();            if (discoveredIp != g_server_ip || discoveredPort != g_server_port) {              g_server_ip = discoveredIp;              g_server_port = discoveredPort;              Serial.print("Discovered Server IP: ");              Serial.print(g_server_ip);              Serial.print(", Port: ");              Serial.println(g_server_port);            }          }        }      }    }  }}
  /**  * @brief Reads thermal data from the AMG8833, formats it as JSON, and POSTs it to the server.  */ void handleThermalUpdate() {  Serial.println("\n--- Handling Thermal Update ---");  int statusCode = sensor.updatePixelMatrix();  if (statusCode != 0) {    Serial.print("Failed to read pixel matrix. Error: ");    Serial.println(sensor.getErrorDescription(statusCode));    return;  }  // Create JSON object  JSONVar thermalPayload;    // Create a JSON array for the 8x8 matrix  JSONArray matrix = JSONArray();  for (int i = 0; i < 8; i++) {    JSONArray row = JSONArray();    for (int j = 0; j < 8; j++) {      row[j] = sensor.pixelMatrix[i][j];    }    matrix[i] = row;  }  thermalPayload["thermal_matrix"] = matrix;  // TODO: Add other sensor data like voltage here  // thermalPayload["voltage"] = analogRead(A3) * 0.02989;  String jsonString = JSON.stringify(thermalPayload);    Serial.println("Sending thermal data...");  httpPost("/api/thermal_update", jsonString);} /** 
 
 /**
@@ -208,6 +201,14 @@ void setupEsp01s() {
 
   // Set mode to Station mode
   sendAtCommand("AT+CWMODE=1", 2000);
+  delay(1000);
+
+  // Enable multiple connections
+  sendAtCommand("AT+CIPMUX=1", 2000);
+  delay(1000);
+
+  // Start UDP listener on port 5005
+  sendAtCommand("AT+CIPSTART=0,\"UDP\",\"0.0.0.0\",0,5005,0", 2000);
   delay(1000);
 
   // Connect to WiFi
@@ -537,19 +538,15 @@ void controlBuzzer(uint8_t buzzer_code) {
 String httpPost(String path, String jsonPayload) {
   String httpRequest = "POST " + path + " HTTP/1.1
 ";
-  httpRequest += "Host: " + String(serverIp) + "
-";
-  httpRequest += "Content-Type: application/json
-";
-  httpRequest += "Content-Length: " + String(jsonPayload.length()) + "
-";
-  httpRequest += "Connection: close
+  httpRequest += "Host: " + g_server_ip + "
+";  httpRequest += "Content-Type: application/json
+";  httpRequest += "Content-Length: " + String(jsonPayload.length()) + "
+";  httpRequest += "Connection: close
 
-";
-  httpRequest += jsonPayload;
+";  httpRequest += jsonPayload;
 
   // Establish TCP connection
-  String response = sendAtCommand("AT+CIPSTART=\"TCP\",\"" + String(serverIp) + "\"," + String(serverPort), 5000);
+  String response = sendAtCommand("AT+CIPSTART=\"TCP\",\"" + g_server_ip + "\","" + String(serverPort), 5000);
   if (response.indexOf("ERROR") != -1) {
     Serial.println("Failed to establish TCP connection.");
     return "";
@@ -662,6 +659,18 @@ void syncWithServer() {
     Serial.print("Received response: ");
     Serial.println(responseBody);
 
+    // If successfully synced and not yet notified, send discovery connected signal
+    if (!g_discovery_notified) {
+      Serial.println("Notifying server of successful discovery...");
+      String discoveryResponse = httpPost("/api/discovery/connected", "{}"); // Empty JSON payload
+      if (discoveryResponse != "") {
+        Serial.println("Discovery notification sent successfully.");
+        g_discovery_notified = true;
+      } else {
+        Serial.println("Failed to send discovery notification.");
+      }
+    }
+
     JSONVar responseJson = JSON.parse(responseBody);
     if (JSON.typeof(responseJson) == "undefined") {
       Serial.println("Failed to parse server response.");
@@ -737,11 +746,12 @@ void syncWithServer() {
  */
 String httpGet(String path) {
   String httpRequest = "GET " + path + " HTTP/1.1\r\n";
-  httpRequest += "Host: " + String(serverIp) + "\r\n";
+  httpRequest += "Host: " + g_server_ip + "\r\n";
   httpRequest += "Connection: close\r\n\r\n";
 
   // Establish TCP connection
-  String response = sendAtCommand("AT+CIPSTART=\"TCP\",\"" + String(serverIp) + "\",\"" + String(serverPort), 5000);
+  String response = sendAtCommand("AT+CIPSTART=\"TCP\",\"" + g_server_ip + "\",\"" + String(g_server_port), 5000);
+
   if (response.indexOf("ERROR") != -1) {
     Serial.println("Failed to establish TCP connection.");
     return "";
