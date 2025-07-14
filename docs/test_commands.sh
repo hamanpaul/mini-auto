@@ -7,7 +7,7 @@ SERVER_URL="http://127.0.0.1:8000"
 # Function to start the FastAPI server
 start_server() {
     echo "Starting FastAPI server..."
-    python main.py > server.log 2>&1 &
+    python3 main.py > server.log 2>&1 &
     SERVER_PID=$!
     echo "Server PID: $SERVER_PID"
     # Wait for the server to start (adjust sleep time if needed)

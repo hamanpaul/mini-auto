@@ -2,56 +2,65 @@ from fastapi import APIRouter, HTTPException, Body, Depends, Request
 from pydantic import BaseModel
 from enum import Enum
 from typing import Optional, List
+from datetime import datetime
 
 router = APIRouter()
 
-# --- 控制模式定義 ---
+# --- Global Log Buffer ---
+backend_log_buffer = []
+MAX_LOG_ENTRIES = 500 # Limit log entries to prevent excessive memory usage
+
+def add_backend_log(message: str, level: str = "INFO"):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] [{level}] [Backend] {message}"
+    backend_log_buffer.append(log_entry)
+    if len(backend_log_buffer) > MAX_LOG_ENTRIES:
+        backend_log_buffer.pop(0) # Remove oldest entry if buffer exceeds limit
+
+# --- Control Mode Definition ---
 class ControlMode(str, Enum):
     MANUAL = "manual"
     AVOIDANCE = "avoidance"
     AUTONOMOUS = "autonomous"
 
-current_control_mode: ControlMode = ControlMode.MANUAL # 預設為手動控制模式
+current_control_mode: ControlMode = ControlMode.MANUAL # Default to manual control mode
 
-# 全域變數，用於儲存當前的手動控制指令
+# Global variables for current manual control commands
 current_manual_motor_speed: int = 0
 current_manual_direction_angle: int = 0
 current_manual_servo_angle: int = 0
 current_manual_command_byte: int = 0
 
-# 全域變數，用於儲存最新收到的數據和發送的指令
+# Global variables for latest received data and sent commands
 latest_arduino_data: Optional[dict] = None
 latest_command_sent: Optional[dict] = None
 latest_esp32_cam_ip: Optional[str] = None
 latest_thermal_analysis_results: Optional[dict] = None
 camera_processor_instance = None # CameraStreamProcessor instance
 
-# 定義 /api/sync 請求的數據模型
+# Define data models
 class SyncRequest(BaseModel):
     s: int  # status_byte
     v: int  # voltage_mv
     t: Optional[List[List[int]]] = None  # thermal_matrix (optional)
     i: Optional[str] = None # esp32_ip (optional)
+    u: Optional[int] = None # ultrasonic_distance_cm (optional)
 
-# 定義 /api/sync 回應的數據模型
 class SyncResponse(BaseModel):
     c: int = 0  # command_byte
     m: int = 0  # motor_speed
     d: int = 0  # direction_angle
     a: int = 0  # servo_angle
 
-# 定義 /api/register_camera 請求的數據模型
 class RegisterCameraRequest(BaseModel):
     i: str # esp32_ip
 
-# 定義 /api/manual_control 請求的數據模型
 class ManualControlRequest(BaseModel):
     m: int = 0  # motor_speed
     d: int = 0  # direction_angle
     a: int = 0  # servo_angle
     c: int = 0  # command_byte
 
-# 定義 /api/set_control_mode 請求的數據模型
 class SetControlModeRequest(BaseModel):
     mode: ControlMode
 
@@ -61,22 +70,24 @@ async def sync_data(request: Request, data: SyncRequest):
     global current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte
     global current_control_mode
 
-    # 儲存最新收到的數據
+    # Store latest received data
     latest_arduino_data = data.model_dump()
 
-    print(f"\n--- Received Sync Data ---")
-    print(f"Status Byte (s): {data.s} (Binary: {bin(data.s)})")
-    print(f"Voltage (v): {data.v} mV")
+    add_backend_log(f"--- Received Sync Data ---")
+    add_backend_log(f"Status Byte (s): {data.s} (Binary: {bin(data.s)})")
+    add_backend_log(f"Voltage (v): {data.v} mV")
     if data.t:
-        print(f"Thermal Matrix (t): {data.t}")
+        add_backend_log(f"Thermal Matrix (t): {data.t}")
         latest_thermal_analysis_results = _analyze_thermal_data(data.t)
-        print(f"Thermal Analysis: {latest_thermal_analysis_results}")
+        add_backend_log(f"Thermal Analysis: {latest_thermal_analysis_results}")
     if data.i:
-        print(f"ESP32 IP (i): {data.i}")
-    print(f"Current Control Mode: {current_control_mode.value}")
-    print(f"--------------------------")
+        add_backend_log(f"ESP32 IP (i): {data.i}")
+    if data.u is not None:
+        add_backend_log(f"Ultrasonic Distance (u): {data.u} cm")
+    add_backend_log(f"Current Control Mode: {current_control_mode.value}")
+    add_backend_log(f"--------------------------")
 
-    # --- 指令生成邏輯 ---
+    # --- Command Generation Logic ---
     response_command: SyncResponse
 
     if current_control_mode == ControlMode.MANUAL:
@@ -86,10 +97,10 @@ async def sync_data(request: Request, data: SyncRequest):
     elif current_control_mode == ControlMode.AUTONOMOUS:
         response_command = _generate_autonomous_commands()
     else:
-        # 預設情況，例如未知模式，回傳停止指令
+        # Default case, e.g., unknown mode, return stop command
         response_command = SyncResponse()
 
-    # 儲存最新發送的指令
+    # Store latest sent command
     latest_command_sent = response_command.model_dump()
 
     return response_command
@@ -103,36 +114,36 @@ async def manual_control(control_data: ManualControlRequest):
     current_manual_servo_angle = control_data.a
     current_manual_command_byte = control_data.c
 
-    print(f"\n--- Manual Control Command Received ---")
-    print(f"Motor Speed (m): {current_manual_motor_speed}")
-    print(f"Direction Angle (d): {current_manual_direction_angle}")
-    print(f"Servo Angle (a): {current_manual_servo_angle}")
-    print(f"Command Byte (c): {current_manual_command_byte}")
-    print(f"-------------------------------------")
+    add_backend_log(f"--- Manual Control Command Received ---")
+    add_backend_log(f"Motor Speed (m): {current_manual_motor_speed}")
+    add_backend_log(f"Direction Angle (d): {current_manual_direction_angle}")
+    add_backend_log(f"Servo Angle (a): {current_manual_servo_angle}")
+    add_backend_log(f"Command Byte (c): {current_manual_command_byte}")
+    add_backend_log(f"-------------------------------------")
     return {"message": "Manual control command updated"}
 
 @router.post("/api/set_control_mode")
 async def set_control_mode(request: SetControlModeRequest):
     global current_control_mode
     current_control_mode = request.mode
-    print(f"\n--- Control Mode Changed ---")
-    print(f"New Control Mode: {current_control_mode.value}")
-    print(f"----------------------------")
+    add_backend_log(f"--- Control Mode Changed ---")
+    add_backend_log(f"New Control Mode: {current_control_mode.value}")
+    add_backend_log(f"----------------------------")
     return {"message": f"Control mode set to {current_control_mode.value}"}
 
 @router.post("/api/register_camera")
 async def register_camera(request_data: RegisterCameraRequest):
     global latest_esp32_cam_ip, camera_processor_instance
     latest_esp32_cam_ip = request_data.i
-    print(f"\n--- Received ESP32-S3 IP Registration ---")
-    print(f"Registered ESP32-S3 IP: {latest_esp32_cam_ip}")
-    print(f"----------------------------------------")
+    add_backend_log(f"--- Received ESP32-S3 IP Registration ---")
+    add_backend_log(f"Registered ESP32-S3 IP: {latest_esp32_cam_ip}")
+    add_backend_log(f"----------------------------------------")
     
     if camera_processor_instance:
         camera_processor_instance.update_stream_source(latest_esp32_cam_ip)
         camera_processor_instance.start()
     else:
-        print("Warning: camera_processor_instance is not initialized. Cannot start stream.")
+        add_backend_log("Warning: camera_processor_instance is not initialized. Cannot start stream.", level="WARNING")
 
     return {"message": "ESP32-S3 IP registered successfully"}
 
@@ -140,7 +151,11 @@ async def register_camera(request_data: RegisterCameraRequest):
 async def get_latest_data():
     return {"latest_data": latest_arduino_data, "latest_command": latest_command_sent, "esp32_cam_ip": latest_esp32_cam_ip, "current_control_mode": current_control_mode.value, "thermal_analysis": latest_thermal_analysis_results, "visual_analysis": camera_processor_instance.get_latest_frame()[2] if camera_processor_instance else None}
 
-# --- 指令生成輔助函式 ---
+@router.get("/api/logs")
+async def get_logs():
+    return {"logs": backend_log_buffer}
+
+# --- Command Generation Helper Functions ---
 def _generate_manual_commands() -> SyncResponse:
     return SyncResponse(
         c=current_manual_command_byte,
@@ -150,10 +165,10 @@ def _generate_manual_commands() -> SyncResponse:
     )
 
 def _generate_avoidance_commands() -> SyncResponse:
-    # TODO: 實作避障邏輯
-    # 讀取 latest_arduino_data (例如熱成像) 和 CameraStreamProcessor 的分析結果
-    # 根據邏輯生成馬達/舵機指令
-    print("Executing avoidance logic (placeholder)...")
+    # TODO: Implement avoidance logic
+    # Read latest_arduino_data (e.g., thermal imaging) and analysis results from CameraStreamProcessor
+    # Generate motor/servo commands based on logic
+    add_backend_log("Executing avoidance logic (placeholder)...", level="DEBUG")
     return SyncResponse(
         c=current_manual_command_byte,
         m=current_manual_motor_speed,
@@ -162,7 +177,7 @@ def _generate_avoidance_commands() -> SyncResponse:
     )
 
 def _generate_autonomous_commands() -> SyncResponse:
-    print("Executing autonomous logic...")
+    add_backend_log("Executing autonomous logic...", level="DEBUG")
     
     # --- Default command: Stop ---
     motor_speed = 0
@@ -177,10 +192,10 @@ def _generate_autonomous_commands() -> SyncResponse:
         visual_analysis = camera_processor_instance.get_latest_frame()[2]
 
     if not visual_analysis:
-        print("  - Visual analysis not available. Stopping.")
+        add_backend_log("  - Visual analysis not available. Stopping.", level="DEBUG")
         return SyncResponse(c=command_byte, m=motor_speed, d=direction_angle, a=servo_angle)
 
-    print(f"  - Visual Analysis: {visual_analysis}")
+    add_backend_log(f"  - Visual Analysis: {visual_analysis}", level="DEBUG")
 
     # --- Decision Logic ---
     obstacle_detected = visual_analysis.get("obstacle_detected", False)
@@ -194,31 +209,31 @@ def _generate_autonomous_commands() -> SyncResponse:
         frame_width = 320
         turn_threshold = frame_width / 3 # Divide frame into 3 sections
 
-        print(f"  - Obstacle DETECTED (Center X: {obstacle_center_x}, Area: {obstacle_area_ratio})")
+        add_backend_log(f"  - Obstacle DETECTED (Center X: {obstacle_center_x}, Area: {obstacle_area_ratio})", level="DEBUG")
 
         # Priority 1: Obstacle is very large (close), so back up
         if obstacle_area_ratio > 0.5:
-            print("  - Action: Obstacle too close! Moving backward.")
+            add_backend_log("  - Action: Obstacle too close! Moving backward.", level="DEBUG")
             motor_speed = 100 # Adjust speed as needed
             direction_angle = 180 # Backward
         # Priority 2: Obstacle is on the right, so turn left
         elif obstacle_center_x > (frame_width - turn_threshold):
-            print("  - Action: Obstacle on the right. Turning left.")
+            add_backend_log("  - Action: Obstacle on the right. Turning left.", level="DEBUG")
             motor_speed = 120 # Adjust speed as needed
             direction_angle = 270 # Turn Left
         # Priority 3: Obstacle is on the left, so turn right
         elif obstacle_center_x < turn_threshold:
-            print("  - Action: Obstacle on the left. Turning right.")
+            add_backend_log("  - Action: Obstacle on the left. Turning right.", level="DEBUG")
             motor_speed = 120 # Adjust speed as needed
             direction_angle = 90 # Turn Right
         # Priority 4: Obstacle is in the center, back up slowly
         else:
-            print("  - Action: Obstacle in center. Moving backward slowly.")
+            add_backend_log("  - Action: Obstacle in center. Moving backward slowly.", level="DEBUG")
             motor_speed = 80
             direction_angle = 180 # Backward
     else:
         # --- No Obstacle Detected: Move Forward ---
-        print("  - No obstacle detected. Moving forward.")
+        add_backend_log("  - No obstacle detected. Moving forward.", level="DEBUG")
         motor_speed = 150 # Cruise speed
         direction_angle = 0 # Forward
 
