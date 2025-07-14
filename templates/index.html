@@ -1,100 +1,398 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Miniauto Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 800px; margin: auto; }
-        h1 { color: #0056b3; }
-        .section { margin-bottom: 20px; padding: 15px; border: 1px solid #eee; border-radius: 5px; background-color: #fafafa; }
-        .section h2 { margin-top: 0; color: #007bff; }
-        .data-item { margin-bottom: 10px; }
-        .data-label { font-weight: bold; margin-right: 5px; }
-        .thermal-grid { display: grid; grid-template-columns: repeat(8, 30px); grid-template-rows: repeat(8, 30px); gap: 2px; border: 1px solid #ccc; padding: 5px; }
-        .thermal-cell { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 0.7em; background-color: #e0e0e0; border-radius: 3px; }
-        .thermal-cell.hot { background-color: #ff4d4d; color: white; }
-        .thermal-cell.warm { background-color: #ffcc00; }
-        .thermal-cell.cool { background-color: #66b3ff; }
-        .thermal-cell.cold { background-color: #007bff; color: white; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background-color: #f4f4f4;
+            color: #333;
+            display: flex;
+            flex-direction: column; /* Changed to column to stack main content and debug window */
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr; /* Three columns: left, center, right */
+            gap: 20px;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            max-width: 1200px; /* Adjust as needed */
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 20px; /* Space between main content and debug window */
+        }
+        .panel {
+            background-color: #f8f8f8;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .center-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        h1, h2 {
+            color: #ff6600; /* Orange accent */
+            text-align: center;
+            margin-top: 0;
+        }
+        /* Keyboard Control Info */
+        .keyboard-info {
+            text-align: center;
+            margin: 20px auto;
+            font-size: 1.1em;
+            color: #555;
+        }
+        /* Speed Slider Styles */
+        .speed-slider-container {
+            margin: 20px auto;
+            width: 80%;
+            text-align: center;
+        }
+        .speed-slider-container input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 10px;
+            background: #ddd;
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        .speed-slider-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #ff6600;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .speed-slider-container input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #ff6600;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .camera-feed-container {
+            text-align: center;
+        }
+        .camera-feed-container img {
+            width: 100%;
+            max-width: 640px; /* Adjust as needed */
+            height: auto;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+        }
+        .seven-segment-display-placeholder {
+            background-color: #333; /* Dark background for display */
+            color: #00ff00; /* Greenish glow for digits */
+            font-family: 'DSEG7 Classic', monospace; /* Placeholder font */
+            font-size: 2em;
+            min-height: 80px;
+        }
+        .rgb-slider-placeholder {
+            background: linear-gradient(to right, red, orange, yellow, green, blue, indigo, violet); /* Rainbow gradient */
+            min-height: 50px;
+        }
+        .function-buttons-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .function-buttons-container button {
+            padding: 10px 15px;
+            font-size: 1em;
+            background-color: #007bff; /* Blue for general buttons */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .function-buttons-container button:hover {
+            background-color: #0056b3;
+        }
+        .reset-button {
+            background-color: #ff6600; /* Orange for reset button */
+            color: white;
+            font-weight: bold;
+            padding: 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .reset-button:hover {
+            background-color: #cc5200;
+        }
+        /* Debug Window Styles */
+        .debug-window {
+            background-color: #222; /* Dark background for console look */
+            color: #0f0; /* Green text for console look */
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-width: 1200px;
+            width: 100%;
+            height: 200px; /* Fixed height */
+            overflow-y: scroll; /* Enable vertical scrolling */
+            box-sizing: border-box;
+        }
+        .debug-window pre {
+            margin: 0;
+            white-space: pre-wrap; /* Wrap long lines */
+            word-break: break-all;
+        }
+        .log-entry {
+            margin-bottom: 2px;
+        }
+        .log-source-gui { color: #00ffff; } /* Cyan */
+        .log-source-remote { color: #ff00ff; } /* Magenta */
+        .log-source-local { color: #ffff00; } /* Yellow */
+        .log-level-info { color: #0f0; }
+        .log-level-warning { color: #ffcc00; }
+        .log-level-error { color: #f00; }
+        .log-level-debug { color: #00aaff; }
     </style>
 </head>
 <body>
-    <div id="app" class="container">
-        <h1>Miniauto Dashboard</h1>
-
-        <div class="section">
-            <h2>最新狀態</h2>
-            <div class="data-item"><span class="data-label">狀態字節 (s):</span> {{ latest_data.s }} ({{ bin(latest_data.s) }})</div>
-            <div class="data-item"><span class="data-label">電壓 (v):</span> {{ latest_data.v / 100 }} V</div>
-            <div class="data-item"><span class="data-label">ESP32 IP (i):</span> {{ latest_data.i || 'N/A' }}</div>
-            <div class="data-item"><span class="data-label">控制模式:</span> {{ latest_data.current_control_mode || 'N/A' }}</div>
-        </div>
-
-        <div class="section" v-if="latest_data.t">
-            <h2>熱成像矩陣</h2>
-            <div class="thermal-grid">
-                <div v-for="row in latest_data.t" :key="row_index" class="thermal-row">
-                    <div v-for="temp in row" :key="col_index" 
-                         :class="['thermal-cell', getTempClass(temp)]">
-                        {{ (temp / 100).toFixed(1) }}°C
-                    </div>
-                </div>
+    <div id="app" class="dashboard-container">
+        <div class="left-column panel">
+            <h2>Control Inputs</h2>
+            <div class="keyboard-info">
+                Use Arrow Keys (↑ ↓ ← →) for movement.
             </div>
-            <div class="data-item"><span class="data-label">最高溫度:</span> {{ latest_data.thermal_analysis.max_temp }}°C</div>
-            <div class="data-item"><span class="data-label">平均溫度:</span> {{ latest_data.thermal_analysis.avg_temp }}°C</div>
-            <div class="data-item"><span class="data-label">熱點檢測:</span> {{ latest_data.thermal_analysis.hotspot_detected ? '是' : '否' }}</div>
+            <div class="speed-slider-container">
+                <label for="speed-slider">Speed: {{ speedSliderValue }}</label>
+                <input type="range" id="speed-slider" min="0" max="255" v-model="speedSliderValue" @input="sendManualControl">
+            </div>
         </div>
 
-        <div class="section">
-            <h2>視覺分析</h2>
-            <div class="data-item"><span class="data-label">障礙物檢測:</span> {{ latest_data.visual_analysis.obstacle_detected ? '是' : '否' }}</div>
-            <div class="data-item"><span class="data-label">紅色像素百分比:</span> {{ latest_data.visual_analysis.red_percentage }}%</div>
-            <img v-if="latest_data.i" :src="'http://' + latest_data.i + '/stream'" width="320" height="240" alt="ESP32-S3 Stream">
-            <div v-else>等待 ESP32-S3 IP 註冊...</div>
+        <div class="center-column center-panel">
+            <h2>Live Feed</h2>
+            <div class="camera-feed-container">
+                <img v-if="esp32CamIp" :src="'http://' + esp32CamIp + '/stream'" alt="ESP32-S3 Stream">
+                <div v-else>Waiting for ESP32-S3 IP...</div>
+            </div>
+            <div class="seven-segment-display-placeholder">Distance: 123.45 cm</div>
+            <div class="rgb-slider-placeholder">RGB Gradient Slider</div>
         </div>
 
-        <div class="section">
-            <h2>最新指令</h2>
-            <div class="data-item"><span class="data-label">指令字節 (c):</span> {{ latest_command.c }} ({{ bin(latest_command.c) }})</div>
-            <div class="data-item"><span class="data-label">馬達速度 (m):</span> {{ latest_command.m }}</div>
-            <div class="data-item"><span class="data-label">方向角度 (d):</span> {{ latest_command.d }}</div>
-            <div class="data-item"><span class="data-label">舵機角度 (a):</span> {{ latest_command.a }}</div>
+        <div class="right-column panel">
+            <h2>Function Buttons</h2>
+            <div class="function-buttons-container">
+                <h3>Control Mode: {{ currentControlMode }}</h3>
+                <button @click="setControlMode('manual')">Set Manual Mode</button>
+                <button @click="setControlMode('avoidance')">Set Avoidance Mode</button>
+                <button @click="setControlMode('autonomous')">Set Autonomous Mode</button>
+                <button @click="registerCamera('192.168.1.100')">Register Camera (192.168.1.100)</button>
+            </div>
+            <button class="reset-button">Reset Button</button>
         </div>
+    </div>
+
+    <div class="debug-window">
+        <h2>Debug Log</h2>
+        <pre v-for="(log, index) in debugLogs" :key="index" :class="'log-entry log-source-' + log.source + ' log-level-' + log.level">
+            [{{ log.timestamp }}] [{{ log.level.toUpperCase() }}] [{{ log.source.toUpperCase() }}] {{ log.message }}
+        </pre>
     </div>
 
     <script>
         new Vue({
             el: '#app',
             data: {
-                latest_data: { s: 0, v: 0, t: null, i: null, current_control_mode: 'N/A', thermal_analysis: { max_temp: 0, min_temp: 0, avg_temp: 0, hotspot_detected: false }, visual_analysis: { obstacle_detected: false, red_percentage: 0 } },
-                latest_command: { c: 0, m: 0, d: 0, a: 0 }
+                motorSpeed: 0,
+                directionAngle: 0,
+                speedSliderValue: 150, // Default speed for keyboard control
+                esp32CamIp: null,
+                latest_data: {},
+                latest_command: {},
+                currentControlMode: 'manual',
+                debugLogs: [],
+                activeKeys: {} // To track currently pressed keys
             },
             methods: {
-                bin(num) {
-                    if (num === null || num === undefined) return 'N/A';
-                    return '0b' + num.toString(2).padStart(8, '0');
+                addLog(message, source = 'gui', level = 'info') {
+                    const timestamp = new Date().toLocaleTimeString();
+                    this.debugLogs.push({ timestamp, message, source, level });
+                    // Auto-scroll to bottom
+                    this.$nextTick(() => {
+                        const debugWindow = document.querySelector('.debug-window');
+                        if (debugWindow) {
+                            debugWindow.scrollTop = debugWindow.scrollHeight;
+                        }
+                    });
                 },
-                getTempClass(temp) {
-                    const actualTemp = temp / 100;
-                    if (actualTemp > 30) return 'hot';
-                    if (actualTemp > 25) return 'warm';
-                    if (actualTemp > 20) return 'cool';
-                    return 'cold';
+                handleKeyDown(event) {
+                    if (event.repeat) return; // Ignore key repeat
+
+                    this.activeKeys[event.key] = true;
+                    this.updateMotorControl();
                 },
-                fetchData() {
-                    fetch('/api/latest_data')
-                        .then(response => response.json())
-                        .then(data => {
-                            this.latest_data = data.latest_data;
-                            this.latest_command = data.latest_command;
-                        })
-                        .catch(error => console.error('Error fetching data:', error));
+                handleKeyUp(event) {
+                    this.activeKeys[event.key] = false;
+                    this.updateMotorControl();
+                },
+                updateMotorControl() {
+                    let newMotorSpeed = 0;
+                    let newDirectionAngle = 0;
+
+                    if (this.activeKeys['ArrowUp']) {
+                        newMotorSpeed = this.speedSliderValue;
+                        newDirectionAngle = 0; // Forward
+                    } else if (this.activeKeys['ArrowDown']) {
+                        newMotorSpeed = this.speedSliderValue;
+                        newDirectionAngle = 180; // Backward
+                    } else if (this.activeKeys['ArrowLeft']) {
+                        newMotorSpeed = this.speedSliderValue;
+                        newDirectionAngle = 270; // Turn Left
+                    } else if (this.activeKeys['ArrowRight']) {
+                        newMotorSpeed = this.speedSliderValue;
+                        newDirectionAngle = 90; // Turn Right
+                    }
+
+                    // Only send if control state changes
+                    if (newMotorSpeed !== this.motorSpeed || newDirectionAngle !== this.directionAngle) {
+                        this.motorSpeed = newMotorSpeed;
+                        this.directionAngle = newDirectionAngle;
+                        this.sendManualControl();
+                        this.addLog(`Keyboard control: M=${this.motorSpeed}, D=${this.directionAngle}`, 'gui', 'debug');
+                    }
+                },
+                async sendManualControl() {
+                    try {
+                        this.addLog(`Sending manual control: M=${this.motorSpeed}, D=${this.directionAngle}`, 'gui', 'info');
+                        const response = await fetch('/api/manual_control', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                m: this.motorSpeed, // Motor Speed
+                                d: this.directionAngle, // Direction Angle
+                                a: 90, // Servo Angle (fixed for now)
+                                c: 0 // Command Byte (fixed for now)
+                            })
+                        });
+                        const data = await response.json();
+                        this.addLog(`Manual control response: ${JSON.stringify(data)}`, 'remote', 'info');
+                    } catch (error) {
+                        this.addLog(`Error sending manual control: ${error.message}`, 'gui', 'error');
+                        console.error('Error sending manual control:', error);
+                    }
+                },
+                async setControlMode(mode) {
+                    try {
+                        this.addLog(`Setting control mode to: ${mode}`, 'gui', 'info');
+                        const response = await fetch('/api/set_control_mode', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ mode: mode })
+                        });
+                        const data = await response.json();
+                        this.addLog(`Set control mode response: ${JSON.stringify(data)}`, 'remote', 'info');
+                        this.currentControlMode = mode; // Update local state
+                    } catch (error) {
+                        this.addLog(`Error setting control mode: ${error.message}`, 'gui', 'error');
+                        console.error('Error setting control mode:', error);
+                    }
+                },
+                async registerCamera(ip) {
+                    try {
+                        this.addLog(`Registering camera with IP: ${ip}`, 'gui', 'info');
+                        const response = await fetch('/api/register_camera', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ i: ip })
+                        });
+                        const data = await response.json();
+                        this.addLog(`Register camera response: ${JSON.stringify(data)}`, 'remote', 'info');
+                        // Optionally update esp32CamIp here if registration is successful
+                        this.esp32CamIp = ip;
+                    } catch (error) {
+                        this.addLog(`Error registering camera: ${error.message}`, 'gui', 'error');
+                        console.error('Error registering camera:', error);
+                    }
+                },
+                async fetchBackendLogs() {
+                    try {
+                        const response = await fetch('/api/logs');
+                        const data = await response.json();
+                        // Only add new logs from backend
+                        const currentBackendLogCount = this.debugLogs.filter(log => log.source === 'backend').length;
+                        if (data.logs.length > currentBackendLogCount) {
+                            for (let i = currentBackendLogCount; i < data.logs.length; i++) {
+                                const logEntry = data.logs[i];
+                                // Parse backend log format: [timestamp] [LEVEL] [Backend] message
+                                const match = logEntry.match(/\[(.*)\] \[(.*)\] \[Backend\] (.*)/);
+                                if (match) {
+                                    this.addLog(match[3], 'backend', match[2].toLowerCase());
+                                } else {
+                                    this.addLog(logEntry, 'backend', 'info'); // Fallback
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        this.addLog(`Error fetching backend logs: ${error.message}`, 'gui', 'error');
+                        console.error('Error fetching backend logs:', error);
+                    }
+                },
+                async fetchData() {
+                    try {
+                        const response = await fetch('/api/latest_data');
+                        const data = await response.json();
+                        this.latest_data = data.latest_data;
+                        this.latest_command = data.latest_command;
+                        if (data.esp32_cam_ip) {
+                            this.esp32CamIp = data.esp32_cam_ip;
+                        }
+                        if (data.current_control_mode) {
+                            this.currentControlMode = data.current_control_mode;
+                        }
+                        // Log latest data and command
+                        this.addLog(`Latest Data: ${JSON.stringify(this.latest_data)}`, 'remote', 'debug');
+                        this.addLog(`Latest Command: ${JSON.stringify(this.latest_command)}`, 'remote', 'debug');
+                    } catch (error) {
+                        this.addLog(`Error fetching data: ${error.message}`, 'gui', 'error');
+                        console.error('Error fetching data:', error);
+                    }
                 }
             },
             mounted() {
                 this.fetchData();
-                setInterval(this.fetchData, 1000); // 每秒更新一次數據
+                this.fetchBackendLogs(); // Fetch initial backend logs
+                setInterval(this.fetchData, 1000); // Fetch data every second
+                setInterval(this.fetchBackendLogs, 2000); // Fetch backend logs every 2 seconds
+
+                // Add keyboard event listeners
+                window.addEventListener('keydown', this.handleKeyDown);
+                window.addEventListener('keyup', this.handleKeyUp);
+            },
+            beforeDestroy() {
+                // Remove event listeners before component is destroyed
+                window.removeEventListener('keydown', this.handleKeyDown);
+                window.removeEventListener('keyup', this.handleKeyUp);
             }
         });
     </script>

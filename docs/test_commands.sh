@@ -7,10 +7,11 @@ SERVER_URL="http://127.0.0.1:8000"
 # Function to start the FastAPI server
 start_server() {
     echo "Starting FastAPI server..."
+
     python3 src/py_rear/main.py & > server.log 2>&1
     echo "FastAPI server started successfully."
 	sleep 10
-    cat server.log
+
 }
 
 # Function to stop the FastAPI server
