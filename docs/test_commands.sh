@@ -7,24 +7,17 @@ SERVER_URL="http://127.0.0.1:8000"
 # Function to start the FastAPI server
 start_server() {
     echo "Starting FastAPI server..."
-    python main.py > server.log 2>&1 &
-    SERVER_PID=$!
-    echo "Server PID: $SERVER_PID"
-    # Wait for the server to start (adjust sleep time if needed)
-    sleep 5
-    # Check if server is actually listening
-    if lsof -ti :8000; then
-        echo "FastAPI server started successfully."
-    else
-        echo "Error: FastAPI server did not start."
-        exit 1
-    fi
+    python3 src/py_rear/main.py & > server.log 2>&1
+    echo "FastAPI server started successfully."
+	sleep 10
+    cat server.log
 }
 
 # Function to stop the FastAPI server
 stop_server() {
+    SERVER_PID=$(netstat -nlp|grep 8000 |awk '{print $NF}' | cut -d'/' -f1)
     echo "Stopping FastAPI server (PID: $SERVER_PID)..."
-    kill $SERVER_PID
+	kill $SERVER_PID
     # Give it a moment to shut down
     sleep 2
     if ! lsof -ti :8000; then

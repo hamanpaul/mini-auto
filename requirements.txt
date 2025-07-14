@@ -1,6 +1,7 @@
 fastapi
 uvicorn
+opencv-python
+numpy
 pytest
 httpx
 jinja2
-opencv-python

@@ -39,6 +39,13 @@
 
 這是我們將要執行的、從無到有的開發任務清單，依照實作順序和依賴關係排列：
 
+**優先任務：建立版號控制機制 (Priority Task: Establish Version Control) - 已完成 ✅**
+
+1.  **建立版號管理系統 (Implement Versioning System):**
+    *   在專案中建立一個集中的地方來管理當前版本號 (例如，一個 `VERSION` 檔案或在 `GEMINI.md` 中明確標示)。 ✅
+    *   確保所有未來的開發工作都遵循 `GEMINI.md` 中定義的版號規則。 ✅
+    *   **當前起始版本**: `1.1.1` ✅
+
 **第一階段：板間通訊與 IP 自動發現 (Inter-Board Communication & IP Discovery) - 已完成 ✅**
 
 1.  **ESP32-S3 端 (視覺模組):**
@@ -71,27 +78,27 @@
     *   **蜂鳴器控制**：根據 `command_byte` 中的位元，實作蜂鳴器的鳴響行為。 ✅
     *   **LED 覆蓋控制**：根據 `command_byte` 中的位元，實作 LED 的特殊覆蓋行為 (例如閃爍)。 ✅
     *   **整合超音波感測器 (Integrate Ultrasonic Sensor):**
-        *   連接 HC-SR04 感測器至數位 I/O 腳位。 待辦 ⏳
-        *   確認 HC-SR04 是使用 I2C 還是 GPIO 介面。 待辦 ⏳
-        *   在韌體中新增讀取距離的函式 (注意 `pulseIn` 超時設定)。 待辦 ⏳
-        *   將距離值加入傳送給後端的 JSON 酬載 (例如 `"u": 55`)。 待辦 ⏳
+        *   連接 HC-SR04 感測器至數位 I/O 腳位。 ✅
+        *   確認 HC-SR04 是使用 I2C 還是 GPIO 介面。 ✅
+        *   在韌體中新增讀取距離的函式 (注意 `pulseIn` 超時設定)。 ✅
+        *   將距離值加入傳送給後端的 JSON 酬載 (例如 `"u": 55`)。 ✅
 
 **第四階段：Python 後端應用邏輯 (Python Backend Application Logic) - 部分完成 ✅**
 
 5.  **Python 後端 (`main.py`):**
     *   **影像串流處理**：修改 `CameraStreamProcessor`，使其使用動態註冊的 ESP32-S3 IP 位址來開啟影像串流，並進行 OpenCV 處理。 ✅
     *   **控制決策邏輯 (感測器融合)**：
-        *   修改 `SyncRequest` Pydantic 模型以接收超音波數據 (`u`)。 待辦 ⏳
+        *   修改 `SyncRequest` Pydantic 模型以接收超音波數據 (`u`)。 ✅
         *   **自主模式 (`AUTONOMOUS`)**:
             *   基於視覺分析的基礎障礙物閃避 (前進、轉彎、後退)。 ✅
-            *   整合**超音波**與**熱感應**數據至決策邏輯中，實現感測器融合。 待辦 ⏳
+            *   整合**超音波**與**熱感應**數據至決策邏輯中，實現感測器融合。 ✅
         *   **避障模式 (`AVOIDANCE`)**:
-            *   實作完整的避障模式 (`_generate_avoidance_commands`)，融合視覺、超音波、熱感應等多重感測器數據。 待辦 ⏳
+            *   實作完整的避障模式 (`_generate_avoidance_commands`)，融合視覺、超音波、熱感應等多重感測器數據。 ✅
 
 **第五階段：建構與測試 (Build & Test)**
 
 6.  **Arduino 程式碼建構**：建構 Arduino UNO 和 ESP32 程式碼。 待辦 ⏳
-7.  **API 功能排查**：檢查後端 API 是否存在功能重疊或可合併的端點 (例如 `manual_control` 和 `sync` 的指令部分)。 待辦 ⏳
+7.  **API 功能排查**：檢查後端 API 是否存在功能重疊或可合併的端點 (例如 `manual_control` 和 `sync` 的指令部分)。 ✅
 
 ---
 
