@@ -20,6 +20,7 @@
 #include <FastLED.h>
 #include <Servo.h>
 #include <math.h>
+#include <Ultrasound.h>
 
 // --- Constant Definitions ---
 
@@ -57,6 +58,7 @@ const char AT_CIPCLOSE[] PROGMEM = "AT+CIPCLOSE";
 // --- Hardware & Sensor Objects ---
 Melopero_AMG8833 sensor;
 Servo myservo;
+Ultrasound ultrasound;
 static CRGB rgbs[1];
 
 // --- Timing Control ---
@@ -378,6 +380,7 @@ bool httpPost(const char* path, char* response_buffer, int buffer_len) {
   uint8_t status_byte = 0;
   char current_esp32_ip[16];
   status_byte |= getBatteryLevelCode();
+  int ultrasonic_distance = ultrasound.GetDistance(); // Read ultrasonic distance
   g_vision_module_error = !getEsp32IpAddress(current_esp32_ip, sizeof(current_esp32_ip));
   if (!g_vision_module_error) status_byte |= (1 << 3);
 
@@ -402,6 +405,9 @@ bool httpPost(const char* path, char* response_buffer, int buffer_len) {
   char temp_buf[10];
   int payload_len = 0;
   payload_len += sprintf(temp_buf, "{\"s\":%d,\"v\":%d", status_byte, g_current_voltage_mv);
+  if (ultrasonic_distance > 0) { // Only include if valid distance
+    payload_len += sprintf(temp_buf, ",\"u\":%d", ultrasonic_distance);
+  }
   static char last_sent_esp32_ip[16] = "";
   if (!g_vision_module_error && strcmp(current_esp32_ip, last_sent_esp32_ip) != 0) {
     payload_len += sprintf(temp_buf, ",\"i\":\"%s\"", current_esp32_ip);
@@ -438,6 +444,9 @@ bool httpPost(const char* path, char* response_buffer, int buffer_len) {
   
   // Stream the JSON payload manually
   espSerial.print(F("{\"s\":")); espSerial.print(status_byte); espSerial.print(F(",\"v\":")); espSerial.print(g_current_voltage_mv);
+  if (ultrasonic_distance > 0) {
+    espSerial.print(F(",\"u\":")); espSerial.print(ultrasonic_distance);
+  }
   if (!g_vision_module_error && strcmp(current_esp32_ip, last_sent_esp32_ip) != 0) {
     espSerial.print(F(",\"i\":\"")); espSerial.print(current_esp32_ip); espSerial.print(F("\""));
     strcpy(last_sent_esp32_ip, current_esp32_ip);
