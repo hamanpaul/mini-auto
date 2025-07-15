@@ -445,7 +445,7 @@ void Motors_Set(int8_t Motor_0, int8_t Motor_1, int8_t Motor_2, int8_t Motor_3)
   int8_t pwm_set[4];
   int8_t motors[4] = { Motor_0, Motor_1, Motor_2, Motor_3};
   bool direction[4] = { 1, 0, 0, 1};///< 前进 左1 右0
-  for(uint8_t i; i < 4; ++i) 
+  for(uint8_t i = 0; i < 4; ++i) 
   {
     if(motors[i] < 0) direction[i] = !direction[i];
     else direction[i] = direction[i];
