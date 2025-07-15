@@ -68,7 +68,7 @@ class Melopero_AMG8833 {
         uint8_t i2cAddress;
         uint8_t bus;
 
-        float pixelMatrix[8][8];
+        int16_t pixelMatrix[8][8];
         float thermistorTemperature;
 
         bool interruptMatrix[8][8];
