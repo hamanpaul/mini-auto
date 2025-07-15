@@ -139,7 +139,7 @@ int Melopero_AMG8833::updatePixelMatrix(){
 
         if (msb < 0 || lsb < 0) return (int) Melopero_AMG8833_ERROR_CODE::ERROR_READING;
 
-        pixelMatrix[i][j] = this->parsePixel((uint8_t)lsb, (uint8_t)msb);
+        pixelMatrix[i][j] = this->parsePixel(lsb, msb);
         j += 1;
         if (j >= 8) {
             j = 0;
@@ -149,11 +149,11 @@ int Melopero_AMG8833::updatePixelMatrix(){
     return (int) Melopero_AMG8833_ERROR_CODE::NO_ERROR;
 }
 
-float Melopero_AMG8833::parsePixel(uint8_t lsb, uint8_t msb){
+int16_t Melopero_AMG8833::parsePixel(uint8_t lsb, uint8_t msb){
     int unified_no_sign = ((msb & 7) << 8) | lsb;
     int value = (msb & 8) == 0 ? 0 : - (1 << 11);
     value += unified_no_sign;
-    return ((float) value) / 4.0;
+    return (int16_t) (value * 25);
 }
 
 int Melopero_AMG8833::updateThermistorTemperature(){
