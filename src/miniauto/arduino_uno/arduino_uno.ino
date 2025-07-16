@@ -31,8 +31,8 @@
 const static uint8_t ledPin = 2;
 const static uint8_t buzzerPin = 3;
 const static uint8_t servoPin = 5;
-const static uint8_t motorpwmPin[4] = {9, 6, 11, 10};
-const static uint8_t motordirectionPin[4] = {12, 7, 13, 8};
+const static uint8_t motorpwmPin[4] = {10, 9, 6, 11};
+const static uint8_t motordirectionPin[4] = {12, 8, 7, 13};
 
 // --- Network Configuration ---
 const char ssid[] PROGMEM = "Hcedu01";

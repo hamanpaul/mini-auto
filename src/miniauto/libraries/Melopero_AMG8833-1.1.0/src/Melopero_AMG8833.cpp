@@ -16,7 +16,7 @@ int Melopero_AMG8833::readByte(uint8_t registerAddress){
     if (this->i2c->endTransmission(false) != 0)
         return (int) Melopero_AMG8833_ERROR_CODE::ERROR_READING;
 
-    this->i2c->requestFrom(this->i2cAddress, 1);
+    this->i2c->requestFrom((uint8_t)this->i2cAddress, (uint8_t)1);
     if (this->i2c->available())
         return this->i2c->read();
     else

@@ -106,7 +106,7 @@ class Melopero_AMG8833 {
         String getErrorDescription(int errorCode);
 
     private:
-        float parsePixel(uint8_t lsb, uint8_t msb);
+        int16_t parsePixel(uint8_t lsb, uint8_t msb);
         uint16_t to12bitFormat(float temp);
 };
 
