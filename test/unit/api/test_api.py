@@ -1,16 +1,7 @@
-import sys
-import os
-
-# Add the project root to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'py_rear')))
-
 import pytest
 from fastapi.testclient import TestClient
-from src.py_rear.main import app
-from apis.vehicle_api import latest_arduino_data, latest_command_sent, latest_esp32_cam_ip, current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte, current_control_mode
+from py_rear.main import app
+from py_rear.apis.vehicle_api import latest_arduino_data, latest_command_sent, latest_esp32_cam_ip, current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte, current_control_mode
 
 
 def test_sync_api():
