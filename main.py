@@ -57,7 +57,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__
 # Define the root path to serve index.html
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    with open(os.path.join(os.path.dirname(__file__), "templates", "index.html"), "r") as f:
+    with open(os.path.join(os.path.dirname(__file__), "templates", "index.html"), "r", encoding="utf-8") as f:
         return f.read()
 
 # Run the server
