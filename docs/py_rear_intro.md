@@ -55,66 +55,66 @@ GUI (或其他外部監控工具) 主要透過以下 API 與後端互動：
 
 ```mermaid
 graph TD
-    subgraph 外部環境
-        GUI[使用者介面/外部控制] -->|設定控制模式/手動指令| F(FastAPI)
-        GUI -->|獲取最新數據/影像/日誌| F
-        Arduino[Arduino UNO] -->|定期 POST /api/sync (狀態, 電壓, 熱成像, 超音波)| F
-        ESP32_CAM[ESP32-S3 攝影機] -->|POST /api/register_camera (IP)| F
-        ESP32_CAM -->|MJPEG 串流| CSP[CameraStreamProcessor]
+    subgraph "外部環境 (External Environment)"
+        GUI[使用者介面/外部控制]
+        Arduino[Arduino UNO]
+        ESP32_CAM[ESP32-S3 攝影機]
     end
 
-    subgraph Python FastAPI 後端
-        F(FastAPI)
-        F -->|初始化並載入 API 路由|
+    subgraph "Python FastAPI 後端 (Backend)"
+        F(FastAPI Server)
 
-        subgraph API 端點
-            subgraph Vehicle Control
-                VC_SYNC[/api/sync] -->|處理狀態, 生成指令|
-                VC_MANUAL[/api/manual_control] -->|更新手動指令|
-                VC_MODE[/api/set_control_mode] -->|更新控制模式|
-                VC_LATEST[/api/latest_data] -->|返回最新數據|
-                VC_LOGS[/api/logs] -->|返回日誌|
-            end
+        subgraph "API 端點 (Endpoints)"
+            VC_SYNC["/api/sync (POST)"]
+            VC_MANUAL["/api/manual_control (POST)"]
+            VC_MODE["/api/set_control_mode (POST)"]
+            VC_LATEST["/api/latest_data (GET)"]
+            VC_LOGS["/api/logs (GET)"]
 
-            subgraph Camera Control
-                CC_REG[/api/register_camera] -->|更新 CSP 來源, 啟動 CSP|
-                CC_START[/api/camera/start] -->|啟動 CSP|
-                CC_STOP[/api/camera/stop] -->|停止 CSP|
-                CC_STATUS[/api/camera/status] -->|返回 CSP 狀態|
-                CC_FRAME[/api/camera/latest_frame] -->|從 CSP 獲取處理後影像|
-                CC_STREAM[/api/camera/stream_mjpeg] -->|從 CSP 獲取 MJPEG 串流|
-            end
+            CC_REG["/api/register_camera (POST)"]
+            CC_START["/api/camera/start (POST)"]
+            CC_STOP["/api/camera/stop (POST)"]
+            CC_STATUS["/api/camera/status (GET)"]
+            CC_FRAME["/api/camera/latest_frame (GET)"]
+            CC_STREAM["/api/camera/stream_mjpeg (GET)"]
         end
 
-        subgraph 服務層
-            CSP[CameraStreamProcessor] -->|獲取原始 JPEG 幀|
-            CSP -->|OpenCV 影像處理 (障礙物檢測)|
-            CSP -->|儲存處理結果 (處理後幀, 視覺分析)|
-            CSP -->|提供給 VC_LATEST, CC_FRAME, CC_STREAM|
+        subgraph "服務層 (Service Layer)"
+            style ControlLogic fill:#cde4ff,stroke:#6699ff,stroke-width:2px
+            style ThermalAnalyzer fill:#cde4ff,stroke:#6699ff,stroke-width:2px
+            style CSP fill:#cde4ff,stroke:#6699ff,stroke-width:2px
 
-            ThermalAnalyzer[熱成像分析模組] -->|從 /api/sync 接收熱成像數據|
-            ThermalAnalyzer -->|分析 (最高溫, 熱點等)|
-            ThermalAnalyzer -->|提供給 VC_LATEST|
-
-            ControlLogic[控制邏輯] -->|從 /api/sync 接收感測器數據|
-            ControlLogic -->|從 CSP 獲取視覺分析結果|
-            ControlLogic -->|根據控制模式生成指令|
-            ControlLogic -->|提供給 VC_SYNC|
+            ControlLogic[控制邏輯模組]
+            ThermalAnalyzer[熱成像分析模組]
+            CSP[影像串流處理器<br/>CameraStreamProcessor]
         end
-
-        VC_SYNC --> ControlLogic
-        VC_SYNC --> ThermalAnalyzer
-        VC_LATEST --> CSP
-        VC_LATEST --> ThermalAnalyzer
-        CC_REG --> CSP
-        CC_START --> CSP
-        CC_STOP --> CSP
-        CC_STATUS --> CSP
-        CC_FRAME --> CSP
-        CC_STREAM --> CSP
     end
 
-    ControlLogic -->|指令 (c, m, d, a)| VC_SYNC
-    ThermalAnalyzer -->|分析結果| VC_SYNC
-    CSP -->|視覺分析結果| ControlLogic
+    %% 外部環境 -> API 端點
+    GUI -->|"設定控制模式/手動指令"| F
+    GUI -->|"獲取最新數據/影像/日誌"| F
+    Arduino -->|"定期 POST /api/sync (狀態, 電壓, 熱成像, 超音波)"| VC_SYNC
+    ESP32_CAM -->|"POST /api/register_camera (IP)"| CC_REG
+    ESP32_CAM -- "MJPEG 串流" --> CSP
+
+    %% API 端點 <--> 服務層 (數據流動)
+    VC_SYNC -- "請求/轉發數據" --> ControlLogic
+    VC_SYNC -- "轉發熱成像數據" --> ThermalAnalyzer
+    ControlLogic -- "生成指令" --> VC_SYNC
+
+    VC_MANUAL -- "更新手動指令" --> ControlLogic
+    VC_MODE -- "更新控制模式" --> ControlLogic
+
+    VC_LATEST -- "請求數據" --> ControlLogic
+    VC_LATEST -- "請求數據" --> ThermalAnalyzer
+
+    CC_REG -- "更新來源/啟動" --> CSP
+    CC_START -- "啟動" --> CSP
+    CC_STOP -- "停止" --> CSP
+    CC_STATUS -- "查詢狀態" --> CSP
+    CC_FRAME -- "請求處理後影像" --> CSP
+    CC_STREAM -- "請求即時串流" --> CSP
+
+    %% 服務層內部溝通
+    CSP -- "視覺分析結果" --> ControlLogic
 ```
