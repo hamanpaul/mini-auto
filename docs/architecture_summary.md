@@ -86,3 +86,57 @@
 *   **OpenCV 影像分析**：在 Python 伺服器端接收到圖像後，可以利用 OpenCV 函式庫進行進一步的影像處理和分析，例如目標識別、路徑規劃等，然後將分析結果回傳給 Arduino。
 
 這份架構分析為您提供了當前系統的藍圖，並指明了未來擴展的方向。
+
+```mermaid
+graph TD
+
+    %% --- 使用者端 ---
+    subgraph 使用者端_Client
+        User[開發者 / 使用者]
+    end
+
+    %% --- 主機應用程式 ---
+    subgraph 主機應用程式_Python_Host_Application
+        direction LR
+        Uvicorn[Uvicorn ASGI Server]
+        FastAPI[FastAPI Core]
+        APIs["動態 API 模組\n/status, /forward 等"]
+        Pydantic[Pydantic 資料驗證]
+        OpenCV["(未來功能) OpenCV 影像分析"]
+        Uvicorn --> FastAPI
+        FastAPI --> APIs
+        APIs -- 使用 --> Pydantic
+        FastAPI -- 影像串流（預定） --> OpenCV
+    end
+
+    %% --- 小車硬體 ---
+    subgraph 小車硬體_MiniAuto_Vehicle
+        direction LR
+        Arduino[Arduino UNO]
+        WiFi[WiFi 模組]
+        Motors[馬達與感測器]
+        ESP32[ESP32-S3-CAM]
+        CameraDriver[esp32-camera 驅動]
+        CameraSensor[GC2415 鏡頭感測器]
+
+        Arduino -- 控制 --> Motors
+        Arduino -- UART --> WiFi
+        ESP32 -- 使用 --> CameraDriver
+        CameraDriver -- SCCB/數據介面 --> CameraSensor
+    end
+
+    %% --- 系統連線 ---
+    User -- HTTP GET/POST --> Uvicorn
+    WiFi -- "1. HTTP POST /status\n(車輛狀態)" --> APIs
+    APIs -- "2. HTTP GET /command\n(移動指令)" --> WiFi
+    ESP32 -- "3. HTTP POST /image_stream\n(影像數據，預定)" --> FastAPI
+
+    %% --- 樣式定義 ---
+    classDef host fill:#D9EAD3,stroke:#333,stroke-width:2px;
+    classDef vehicle fill:#FCE5CD,stroke:#333,stroke-width:2px;
+    classDef user fill:#CFE2F3,stroke:#333,stroke-width:2px;
+
+    class User user;
+    class Uvicorn,FastAPI,APIs,Pydantic,OpenCV host;
+    class Arduino,WiFi,Motors,ESP32,CameraDriver,CameraSensor vehicle;
+```
