@@ -34,81 +34,79 @@
 ## 2. 主要 API 呼叫流程圖
 
 ```mermaid
-graph TD
-    subgraph Arduino UNO
-        A[啟動] --> B(定期發送 POST /api/sync)
-        B --> C{接收控制指令}
-        C --> D[執行指令]
-        D --> B
+graph LR
+    %% 區塊一：Arduino UNO
+    subgraph A1 [Arduino UNO]
+        A1_1[啟動]
+        A1_2[定期發送 POST /api/sync]
+        A1_3[接收控制指令]
+        A1_4[執行控制邏輯]
+        A1_1 --> A1_2 --> A1_3 --> A1_4 --> A1_2
     end
 
-    subgraph Python FastAPI Server
-        E[啟動] --> F(監聽 API 請求)
-
-        subgraph Vehicle Control APIs
-            F --> G{POST /api/sync}
-            G -- 接收狀態數據 (s, v, t, u) --> H{判斷控制模式}
-            H -- 手動模式 --> I[使用手動控制參數]
-            H -- 避障模式 --> J[執行避障邏輯 (超音波/視覺)]
-            H -- 自主模式 --> K[執行自主導航邏輯 (視覺)]
-            I --> L(生成控制指令)
-            J --> L
-            K --> L
-            L -- 回傳指令 (c, m, d, a) --> G
-            G --> M[更新最新數據]
-            M --> F
-
-            F --> N{POST /api/manual_control}
-            N -- 接收手動指令 --> O[更新手動控制參數]
-            O --> F
-
-            F --> P{POST /api/set_control_mode}
-            P -- 接收模式 --> Q[更新控制模式]
-            Q --> F
-
-            F --> R{GET /api/latest_data}
-            R -- 返回最新數據 --> F
-
-            F --> S{GET /api/logs}
-            S -- 返回日誌 --> F
-        end
-
-        subgraph Camera Stream APIs
-            F --> T{POST /api/register_camera}
-            T -- 接收 ESP32-S3 IP --> U[更新 CameraStreamProcessor 來源]
-            U --> V[啟動 CameraStreamProcessor]
-            V --> F
-
-            F --> W{POST /api/camera/start}
-            W --> V
-
-            F --> X{POST /api/camera/stop}
-            X --> Y[停止 CameraStreamProcessor]
-            Y --> F
-
-            F --> Z{GET /api/camera/status}
-            Z -- 返回串流狀態 --> F
-
-            F --> AA{GET /api/camera/latest_frame}
-            AA -- 返回處理後影像 --> F
-
-            F --> BB{GET /api/camera/stream_mjpeg}
-            BB -- 返回 MJPEG 串流 --> F
-        end
-
-        subgraph CameraStreamProcessor (獨立執行緒)
-            V --> CC[連接 ESP32-S3 MJPEG 串流]
-            CC --> DD{獲取原始影像幀}
-            DD --> EE[OpenCV 影像處理/分析]
-            EE --> FF[儲存最新幀及分析結果]
-            FF --> DD
-            Y --> GG[停止串流執行緒]
-        end
+    %% 區塊二：FastAPI Server（拆成三塊）
+    subgraph B1 [FastAPI 控制 API]
+        B1_1[接收 /api/sync]
+        B1_2[判斷控制模式]
+        B1_3a[手動模式]
+        B1_3b[避障模式]
+        B1_3c[自主模式]
+        B1_4[生成控制指令]
+        B1_5[回傳給 Arduino]
+        B1_1 --> B1_2
+        B1_2 --> B1_3a --> B1_4
+        B1_2 --> B1_3b --> B1_4
+        B1_2 --> B1_3c --> B1_4
+        B1_4 --> B1_5
     end
 
-    Arduino UNO -- 註冊 IP --> T
-    CameraStreamProcessor -- 提供影像/分析結果 --> AA
-    CameraStreamProcessor -- 提供 MJPEG 串流 --> BB
-    CameraStreamProcessor -- 提供視覺分析結果 --> J
-    CameraStreamProcessor -- 提供視覺分析結果 --> K
+    subgraph B2 [FastAPI 控制設定 API]
+        B2_1[POST /manual_control]
+        B2_2[POST /set_control_mode]
+        B2_3[更新控制參數/模式]
+        B2_1 --> B2_3
+        B2_2 --> B2_3
+    end
+
+    subgraph B3 [FastAPI 資料查詢 API]
+        B3_1[GET /latest_data]
+        B3_2[GET /logs]
+        B3_3[查詢資料/日誌]
+        B3_1 --> B3_3
+        B3_2 --> B3_3
+    end
+
+    %% 區塊三：Camera Stream APIs
+    subgraph C1 [Camera API]
+        C1_1[POST /register_camera]
+        C1_2[啟動 CameraStreamProcessor]
+        C1_3[POST /camera/start]
+        C1_4[POST /camera/stop]
+        C1_5[GET /camera/status]
+        C1_6[GET /latest_frame]
+        C1_7[GET /stream_mjpeg]
+        C1_1 --> C1_2
+        C1_3 --> C1_2
+        C1_4 --> C1_2
+    end
+
+    %% 區塊四：CameraStreamProcessor
+    subgraph D1 [CameraStreamProcessor（背景執行緒）]
+        D1_1[連接 ESP32 MJPEG]
+        D1_2[影像處理]
+        D1_3[儲存分析結果與影像]
+        D1_1 --> D1_2 --> D1_3 --> D1_2
+    end
+
+    %% 區塊間連線
+    A1_2 --> B1_1
+    B1_5 --> A1_3
+
+    C1_2 --> D1_1
+    D1_3 --> C1_6
+    D1_3 --> C1_7
+
+    D1_2 --> B1_3b
+    D1_2 --> B1_3c
+
 ```
