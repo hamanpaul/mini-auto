@@ -22,7 +22,8 @@ class CameraStreamProcessor:
             return
 
         self.esp32_cam_ip = esp32_cam_ip
-        self.stream_url = f"http://{self.esp32_cam_ip}/stream"
+        # The stream URL from the analysis is http://<IP>:81/stream
+        self.stream_url = f"http://{self.esp32_cam_ip}:81/stream"
         print(f"Camera stream source updated to: {self.stream_url}")
 
         if self._running:
@@ -32,7 +33,7 @@ class CameraStreamProcessor:
 
     def _get_mjpeg_stream(self):
         """
-        Connects to an MJPEG stream and yields JPEG frames.
+        Connects to an MJPEG stream using OpenCV and processes frames.
         This method runs in a separate thread.
         """
         if not self.stream_url:
@@ -40,63 +41,53 @@ class CameraStreamProcessor:
             self._running = False
             return
 
-        print(f"Connecting to MJPEG stream at: {self.stream_url}")
+        print(f"Connecting to MJPEG stream with OpenCV at: {self.stream_url}")
+        cap = cv2.VideoCapture(self.stream_url)
+
+        if not cap.isOpened():
+            print(f"Error: Could not open video stream at {self.stream_url}")
+            self._running = False
+            return
+
         try:
-            response = requests.get(self.stream_url, stream=True, timeout=5)
-            response.raise_for_status() # Raise an exception for HTTP errors
-            
-            boundary = None
-            if 'content-type' in response.headers:
-                content_type = response.headers['content-type']
-                parts = content_type.split('boundary=')
-                if len(parts) > 1:
-                    boundary = parts[1].strip()
-                    print(f"Found MJPEG boundary: {boundary}")
-            
-            if not boundary:
-                print("Error: Could not find MJPEG boundary in Content-Type header.")
-                self._running = False
-                return
+            while self._running:
+                ret, frame = cap.read()
+                if not ret:
+                    print("Stream ended or failed to grab frame.")
+                    time.sleep(1) # Wait a bit before trying to reconnect
+                    cap.release()
+                    cap = cv2.VideoCapture(self.stream_url)
+                    if not cap.isOpened():
+                        print("Failed to reconnect to stream. Stopping.")
+                        break
+                    continue
 
-            bytes_data = b''
-            for chunk in response.iter_content(chunk_size=8192):
-                if not self._running: # Check if stop signal received
-                    break
-                bytes_data += chunk
+                # Encode the frame to JPEG bytes for storage and potential proxying
+                ret, buffer = cv2.imencode('.jpg', frame)
+                if not ret:
+                    print("Could not encode frame to JPEG.")
+                    continue
                 
-                a = bytes_data.find(b'--' + boundary.encode('utf-8'))
-                b = bytes_data.find(b'--' + boundary.encode('utf-8'), a + len(boundary) + 2)
-                
-                while a != -1 and b != -1:
-                    jpg_start = bytes_data.find(b'\r\n\r\n', a) + 4
-                    if jpg_start != -1 and jpg_start < b:
-                        jpg_frame_bytes = bytes_data[jpg_start:b]
-                        
-                        with self._lock:
-                            self._latest_frame = jpg_frame_bytes # Store raw frame
-                        
-                        self._process_frame(jpg_frame_bytes) # Process the frame
-                        
-                    bytes_data = bytes_data[b:]
-                    a = bytes_data.find(b'--' + boundary.encode('utf-8'))
-                    b = bytes_data.find(b'--' + boundary.encode('utf-8'), a + len(boundary) + 2)
+                frame_bytes = buffer.tobytes()
 
-        except requests.exceptions.RequestException as e:
-            print(f"Stream request failed: {e}")
+                with self._lock:
+                    self._latest_frame = frame_bytes # Store raw frame bytes
+
+                # Process the raw frame (the one read directly by OpenCV)
+                self._process_frame(frame)
+
         except Exception as e:
             print(f"An unexpected error occurred during streaming: {e}")
         finally:
             print("Stream processing thread stopped.")
+            cap.release()
             self._running = False # Ensure running flag is false on exit
 
-    def _process_frame(self, frame_bytes: bytes):
+    def _process_frame(self, frame: np.ndarray):
         """
-        Decodes and processes a single JPEG frame using OpenCV.
+        Processes a single OpenCV frame.
         """
         try:
-            np_array = np.frombuffer(frame_bytes, np.uint8)
-            frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
-
             if frame is not None:
                 # --- Your OpenCV Image Analysis Logic Here ---
                 # Local, low-resource obstacle detection: Brightness Thresholding + Contour Detection
