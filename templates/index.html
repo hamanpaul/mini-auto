@@ -255,6 +255,16 @@
                 },
                 addLog(message, source = 'gui', level = 'info') {
                     const timestamp = new Date().toLocaleTimeString();
+                    // Filter out specific debug messages
+                    const filteredMessages = [
+                        'Fetching latest data...',
+                        'Fetching backend logs...',
+                        'Latest data fetched successfully.',
+                        'Backend logs fetched successfully.'
+                    ];
+                    if (level === 'debug' && filteredMessages.includes(message)) {
+                        return; // Do not log these specific debug messages
+                    }
                     this.debugLogs.push({ timestamp, message, source, level });
                     // Auto-scroll to bottom
                     this.$nextTick(() => {
@@ -267,13 +277,17 @@
                 handleKeyDown(event) {
                     if (event.repeat) return; // Ignore key repeat
                     const key = event.key.toLowerCase();
-                    this.addLog(`Key down: '${key}'`, 'gui', 'debug');
+                    if (['w', 'a', 's', 'd'].includes(key)) {
+                        this.addLog(`Key down: '${key}'`, 'gui', 'debug');
+                    }
                     this.activeKeys[key] = true;
                     this.updateMotorControl();
                 },
                 handleKeyUp(event) {
                     const key = event.key.toLowerCase();
-                    this.addLog(`Key up: '${key}'`, 'gui', 'debug');
+                    if (['w', 'a', 's', 'd'].includes(key)) {
+                        this.addLog(`Key up: '${key}'`, 'gui', 'debug');
+                    }
                     this.activeKeys[key] = false;
                     this.updateMotorControl();
                 },
