@@ -17,7 +17,7 @@ from src.py_rear.apis import camera # Import the camera API module to set its pr
 # --- Configuration ---
 # IMPORTANT: Replace with your ESP32-S3-CAM's actual IP address
 # You can find this in the Arduino Serial Monitor output
-ESP32_CAM_IP = "YOUR_ESP32_CAM_IP_ADDRESS" # <<<<< CHANGE THIS
+ESP32_CAM_IP = "192.168.5.1" # <<<<< The IP from stream-server.html
 
 # Create a FastAPI app instance
 app = FastAPI()
@@ -52,7 +52,9 @@ for filename in os.listdir(apis_dir):
         app.include_router(module.router)
 
 # Mount static files
-app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "templates")), name="static")
+
+
+app.mount("/templates_static", StaticFiles(directory="templates"), name="templates_static")
 
 # Define the root path to serve index.html
 @app.get("/", response_class=HTMLResponse)
