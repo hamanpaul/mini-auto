@@ -66,3 +66,23 @@ async def get_visual_analysis():
     
     # 返回視覺分析結果。
     return analysis_results
+
+@router.get("/camera/stream")
+async def video_feed():
+    """
+    提供 MJPEG 影像串流。
+    """
+    if camera_processor is None or not camera_processor.is_running():
+        raise HTTPException(status_code=404, detail="Camera stream not running.")
+
+    async def generate_mjpeg_frames():
+        while True:
+            frame_bytes, _, _ = camera_processor.get_latest_frame()
+            if frame_bytes:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n'
+                       b'Content-Length: ' + str(len(frame_bytes)).encode() + b'\r\n'
+                       b'\r\n' + frame_bytes + b'\r\n')
+            await asyncio.sleep(0.03) # 控制幀率，約 30 FPS
+
+    return StreamingResponse(generate_mjpeg_frames(), media_type="multipart/x-mixed-replace; boundary=frame")

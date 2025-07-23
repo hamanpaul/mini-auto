@@ -3,6 +3,7 @@
 
 import uvicorn # 導入 uvicorn，這是一個 ASGI 伺服器，用於運行 FastAPI 應用程式。
 from fastapi import FastAPI # 導入 FastAPI 類，用於創建 Web 應用程式。
+from fastapi.middleware.cors import CORSMiddleware # 導入 CORSMiddleware，用於處理跨來源資源共享 (CORS)。
 from fastapi.staticfiles import StaticFiles # 導入 StaticFiles，用於提供靜態檔案（如 CSS, JS, 圖片）。
 from fastapi.responses import HTMLResponse # 導入 HTMLResponse，用於返回 HTML 內容。
 import os # 導入 os 模組，用於與作業系統互動，例如處理檔案路徑。
@@ -22,6 +23,17 @@ ESP32_CAM_IP = "192.168.5.1" # <<<<< 這個 IP 位址通常來自 stream-server.
 
 # 創建一個 FastAPI 應用程式實例。
 app = FastAPI()
+
+# 配置 CORS 中介軟體，允許所有來源、憑證、方法和標頭。
+# 在開發階段，可以設置 allow_origins=["*"] 來允許所有來源，方便測試。
+# 在生產環境中，應將 allow_origins 設置為您的前端應用程式的具體來源，以提高安全性。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 允許所有來源
+    allow_credentials=True, # 允許跨域請求攜帶憑證 (cookies, HTTP 認證等)
+    allow_methods=["*"],  # 允許所有 HTTP 方法 (GET, POST, PUT, DELETE 等)
+    allow_headers=["*"],  # 允許所有 HTTP 請求標頭
+)
 
 # 宣告一個全域變數，用於儲存 CameraStreamProcessor 的實例。初始值為 None。
 camera_processor_instance: CameraStreamProcessor = None

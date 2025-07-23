@@ -3,6 +3,7 @@ from pydantic import BaseModel # 導入 BaseModel，用於定義資料模型，�
 from enum import Enum # 導入 Enum，用於創建枚舉類型。
 from typing import Optional, List # 導入 Optional 和 List，用於型別提示。
 from datetime import datetime # 導入 datetime，用於處理日期和時間。
+from src.py_rear.apis import camera as apis_camera # 導入 camera 模組，用於存取 camera_processor 實例。
 
 router = APIRouter() # 創建一個 APIRouter 實例，用於定義與車輛控制相關的 API 路由。
 
@@ -37,7 +38,7 @@ latest_arduino_data: Optional[dict] = None # 最新從 Arduino 接收到的資�
 latest_command_sent: Optional[dict] = None # 最新發送給 Arduino 的命令。
 latest_esp32_cam_ip: Optional[str] = None # 最新註冊的 ESP32-CAM IP 位址。
 latest_thermal_analysis_results: Optional[dict] = None # 最新熱像儀分析結果。
-camera_processor_instance = None # CameraStreamProcessor 的實例。
+# camera_processor_instance 將從 apis.camera 模組中引用，因為它在 main.py 中被初始化。
 
 # 定義資料模型：SyncRequest，用於同步請求的資料結構。
 class SyncRequest(BaseModel):
@@ -151,11 +152,11 @@ async def register_camera(request_data: RegisterCameraRequest):
     add_backend_log(f"已註冊 ESP32-S3 IP: {latest_esp32_cam_ip}") # 添加日誌訊息。
     add_backend_log(f"----------------------------------------") # 添加日誌訊息。
     
-    if camera_processor_instance: # 如果 camera_processor_instance 已經初始化。
-        camera_processor_instance.update_stream_source(latest_esp32_cam_ip) # 更新影像串流來源。
-        camera_processor_instance.start() # 啟動影像串流處理器。
+    if apis_camera.camera_processor: # 如果 camera_processor 已經初始化。
+        apis_camera.camera_processor.update_stream_source(latest_esp32_cam_ip) # 更新影像串流來源。
+        apis_camera.camera_processor.start() # 啟動影像串流處理器。
     else:
-        add_backend_log("警告: camera_processor_instance 未初始化。無法啟動串流。", level="WARNING") # 添加警告日誌。
+        add_backend_log("警告: apis_camera.camera_processor 未初始化。無法啟動串流。", level="WARNING") # 添加警告日誌。
 
     return {"message": "ESP32-S3 IP 註冊成功"} # 返回確認訊息。
 
@@ -163,7 +164,7 @@ async def register_camera(request_data: RegisterCameraRequest):
 @router.get("/api/latest_data")
 async def get_latest_data():
     # 返回最新的 Arduino 資料、最新發送的命令、ESP32-CAM IP、當前控制模式、熱像儀分析結果和視覺分析結果。
-    return {"latest_data": latest_arduino_data, "latest_command": latest_command_sent, "esp32_cam_ip": latest_esp32_cam_ip, "current_control_mode": current_control_mode.value, "thermal_analysis": latest_thermal_analysis_results, "visual_analysis": camera_processor_instance.get_latest_frame()[2] if camera_processor_instance else None}
+    return {"latest_data": latest_arduino_data, "latest_command": latest_command_sent, "esp32_cam_ip": latest_esp32_cam_ip, "current_control_mode": current_control_mode.value, "thermal_analysis": latest_thermal_analysis_results, "visual_analysis": apis_camera.camera_processor.get_latest_frame()[2] if apis_camera.camera_processor else None}
 
 # 定義一個 GET 請求的 API 端點：/api/logs，用於獲取後端日誌。
 @router.get("/api/logs")
@@ -212,9 +213,9 @@ def _generate_autonomous_commands() -> SyncResponse:
 
     # --- 獲取視覺分析結果 ---
     visual_analysis = None # 初始化視覺分析結果為 None。
-    if camera_processor_instance and camera_processor_instance.is_running(): # 如果 camera_processor_instance 存在且正在運行。
+    if apis_camera.camera_processor and apis_camera.camera_processor.is_running(): # 如果 camera_processor 存在且正在運行。
         # 第三個元素 [2] 包含分析結果。
-        visual_analysis = camera_processor_instance.get_latest_frame()[2]
+        visual_analysis = apis_camera.camera_processor.get_latest_frame()[2]
 
     if not visual_analysis: # 如果沒有視覺分析結果。
         add_backend_log("  - 視覺分析不可用。正在停止。", level="DEBUG") # 添加日誌訊息。
@@ -229,8 +230,9 @@ def _generate_autonomous_commands() -> SyncResponse:
         obstacle_center_x = visual_analysis.get("obstacle_center_x", -1) # 獲取障礙物中心 X 座標。
         obstacle_area_ratio = visual_analysis.get("obstacle_area_ratio", 0.0) # 獲取障礙物面積比例。
         
-        # 假設幀寬度約為 320 像素，此邏輯可能需要根據實際相機解析度進行調整。
-        frame_width = 320 # 幀寬度。
+        # 由於相機解析度已調整為 QQVGA (160x120)，因此將幀寬度調整為 160。
+        # 這個值可能需要根據實際相機解析度進行微調。
+        frame_width = 480 # 幀寬度。
         turn_threshold = frame_width / 3 # 轉向閾值，將幀分為 3 個區域。
 
         add_backend_log(f"  - 障礙物偵測到 (中心 X: {obstacle_center_x}, 面積: {obstacle_area_ratio})", level="DEBUG") # 添加日誌訊息。
