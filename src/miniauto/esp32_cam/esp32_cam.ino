@@ -65,9 +65,9 @@ void setup_camera() {
   config.pin_pwdn = CAM_PIN_PWDN;
   config.pin_reset = CAM_PIN_RESET;
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_SVGA;
-  config.jpeg_quality = 10;
+  config.pixel_format = PIXFORMAT_RGB565; // 改回 RGB565，因為 RGB888 不被支援
+  config.frame_size = FRAMESIZE_HVGA; // 設定影像解析度為 HVGA (480x320)
+  config.jpeg_quality = 60; // 設定 JPEG 影像品質為 60 (較高)
   config.fb_count = 2;
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location = CAMERA_FB_IN_PSRAM;
@@ -83,9 +83,12 @@ void setup_camera() {
 void handle_stream() {
   WiFiClient client = server.client();
   String boundary = "123456789000000000000987654321";
-  String response = "--" + boundary + "\r\n";
-  response += "Content-Type: multipart/x-mixed-replace; boundary=" + boundary + "\r\n\r\n";
-  server.sendContent(response);
+
+  // 手動發送 HTTP 標頭，確保使用 HTTP/1.1 協定
+  client.print("HTTP/1.1 200 OK\r\n");
+  client.print("Content-Type: multipart/x-mixed-replace; boundary=" + boundary + "\r\n");
+  client.print("Connection: keep-alive\r\n"); // 對於串流很重要
+  client.print("\r\n"); // 標頭結束的空行
 
   while (client.connected()) {
     camera_fb_t *fb = esp_camera_fb_get();
@@ -94,19 +97,44 @@ void handle_stream() {
       continue;
     }
 
+    // 將 RGB565 幀轉換為 JPEG 格式
+    uint8_t *jpg_buf = NULL;
+    size_t jpg_buf_len = 0;
+    bool jpeg_converted = fmt2jpg(fb->buf, fb->len, fb->width, fb->height, PIXFORMAT_RGB565, 60, &jpg_buf, &jpg_buf_len);
+    esp_camera_fb_return(fb); // 釋放原始幀緩衝區
+    fb = NULL;
+
+    if (!jpeg_converted) {
+      Serial.println("JPEG 轉換失敗");
+      if (jpg_buf) free(jpg_buf); // 確保在失敗時也釋放記憶體
+      continue;
+    }
+
+    // 發送多部分串流的邊界和影像標頭
     client.print("--" + boundary + "\r\n");
     client.print("Content-Type: image/jpeg\r\n");
-    client.print("Content-Length: " + String(fb->len) + "\r\n\r\n");
-    client.write(fb->buf, fb->len);
-    client.print("\r\n");
+
+    // 使用 snprintf 安全地格式化 Content-Length 標頭
+    char contentLengthHeader[64]; // 足夠的緩衝區用於 "Content-Length: XXXXX\r\n"
+    snprintf(contentLengthHeader, sizeof(contentLengthHeader), "Content-Length: %u\r\n", jpg_buf_len);
+    client.print(contentLengthHeader);
     
-    esp_camera_fb_return(fb);
+
+    client.print("\r\n"); // 影像標頭結束的空行
+
+    // 發送影像資料
+    client.write(jpg_buf, jpg_buf_len);
+    client.print("\r\n"); // 影像資料結束的空行
+    
+    if (jpg_buf) {
+      free(jpg_buf); // 釋放 JPEG 緩衝區
+    }
   }
 }
 
 void setup() {
   Serial.begin(115200);
-  Serial.setDebugOutput(true);
+  Serial.setDebugOutput(false);
   Serial.println();
 
   // Connect to WiFi

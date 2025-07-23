@@ -134,7 +134,7 @@ class CameraStreamProcessor:
                     
                     # 根據面積過濾（避免小雜訊）和位置（確保是相關的障礙物）。
                     # 根據相機視角和預期障礙物大小調整 min_area_threshold。
-                    min_area_threshold = 500 # 範例：調整此值。
+                    min_area_threshold = 1200 # 範例：根據新的解析度調整此值，可能需要進一步測試和微調。
                     if area > min_area_threshold: # 如果面積大於最小閾值。
                         obstacle_detected = True # 設置障礙物偵測標誌為 True。
                         M = cv2.moments(largest_contour) # 計算輪廓的矩。
