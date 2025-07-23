@@ -1,193 +1,205 @@
-import requests
-import cv2
-import numpy as np
-import asyncio
-import threading
-import time
+import requests # 導入 requests 函式庫，用於發送 HTTP 請求。
+import cv2 # 導入 OpenCV 函式庫，用於影像處理。
+import numpy as np # 導入 NumPy 函式庫，用於數值運算。
+import asyncio # 導入 asyncio 函式庫，用於非同步操作（雖然在此檔案中未直接使用，但通常與非同步程式碼相關）。
+import threading # 導入 threading 函式庫，用於多執行緒編程。
+import time # 導入 time 函式庫，用於時間相關操作。
 
 class CameraStreamProcessor:
+    # 類別的初始化函數。
     def __init__(self):
-        self.esp32_cam_ip = None
-        self.stream_url = None
-        self._running = False
-        self._thread = None
-        self._latest_frame = None
-        self._latest_processed_frame = None
-        self._latest_visual_analysis_results = None
-        self._lock = threading.Lock() # For thread-safe access to frames
+        self.esp32_cam_ip = None # 儲存 ESP32-CAM 的 IP 位址。
+        self.stream_url = None # 儲存影像串流的 URL。
+        self._running = False # 標誌，指示串流處理器是否正在運行。
+        self._thread = None # 儲存運行串流的執行緒實例。
+        self._latest_frame = None # 儲存最新的原始影像幀（JPEG 位元組）。
+        self._latest_processed_frame = None # 儲存最新的已處理影像幀（OpenCV 影像物件）。
+        self._latest_visual_analysis_results = None # 儲存最新的視覺分析結果。
+        self._lock = threading.Lock() # 創建一個執行緒鎖，用於安全地訪問共享資料（影像幀）。
 
+    # 更新影像串流來源的函數。
     def update_stream_source(self, esp32_cam_ip: str):
+        # 如果新的 IP 位址與當前設定的相同，則無需更改。
         if self.esp32_cam_ip == esp32_cam_ip:
-            print(f"Stream IP already set to {esp32_cam_ip}. No change needed.")
+            print(f"串流 IP 已設定為 {esp32_cam_ip}。無需更改。")
             return
 
-        self.esp32_cam_ip = esp32_cam_ip
-        # The stream URL from the analysis is http://<IP>:81/stream
+        self.esp32_cam_ip = esp32_cam_ip # 更新 ESP32-CAM 的 IP 位址。
+        # 根據 IP 位址構建影像串流的 URL。通常 ESP32-CAM 的串流埠是 81。
         self.stream_url = f"http://{self.esp32_cam_ip}:81/stream"
-        print(f"Camera stream source updated to: {self.stream_url}")
+        print(f"相機串流來源已更新為: {self.stream_url}")
 
+        # 如果串流正在運行，則停止並使用新的 IP 重新啟動。
         if self._running:
-            print("Stream is running, restarting with new IP...")
+            print("串流正在運行，正在使用新 IP 重新啟動...")
             self.stop()
             self.start()
 
+    # 內部函數，用於連接 MJPEG 串流並處理影像幀。此函數在單獨的執行緒中運行。
     def _get_mjpeg_stream(self):
         """
-        Connects to an MJPEG stream using OpenCV and processes frames.
-        This method runs in a separate thread.
+        使用 OpenCV 連接到 MJPEG 串流並處理影像幀。
+        此方法在單獨的執行緒中運行。
         """
+        # 如果串流 URL 未設定，則列印錯誤訊息並停止運行。
         if not self.stream_url:
-            print("Error: Stream URL not set. Cannot start streaming.")
+            print("錯誤: 串流 URL 未設定。無法開始串流。")
             self._running = False
             return
 
-        print(f"Connecting to MJPEG stream with OpenCV at: {self.stream_url}")
-        cap = cv2.VideoCapture(self.stream_url)
+        print(f"正在使用 OpenCV 連接到 MJPEG 串流: {self.stream_url}")
+        cap = cv2.VideoCapture(self.stream_url) # 使用 OpenCV 創建視訊捕捉物件。
 
+        # 如果無法打開視訊串流，則列印錯誤訊息並停止運行。
         if not cap.isOpened():
-            print(f"Error: Could not open video stream at {self.stream_url}")
+            print(f"錯誤: 無法打開視訊串流: {self.stream_url}")
             self._running = False
             return
 
         try:
-            while self._running:
-                ret, frame = cap.read()
-                if not ret:
-                    print("Stream ended or failed to grab frame.")
-                    time.sleep(1) # Wait a bit before trying to reconnect
-                    cap.release()
-                    cap = cv2.VideoCapture(self.stream_url)
-                    if not cap.isOpened():
-                        print("Failed to reconnect to stream. Stopping.")
+            while self._running: # 迴圈運行，直到 _running 標誌變為 False。
+                ret, frame = cap.read() # 從串流中讀取一幀影像。
+                if not ret: # 如果無法讀取幀（串流結束或失敗）。
+                    print("串流結束或無法擷取幀。")
+                    time.sleep(1) # 等待一小段時間，然後嘗試重新連接。
+                    cap.release() # 釋放當前的視訊捕捉物件。
+                    cap = cv2.VideoCapture(self.stream_url) # 重新創建視訊捕捉物件。
+                    if not cap.isOpened(): # 如果重新連接失敗，則停止。
+                        print("無法重新連接到串流。正在停止。")
                         break
                     continue
 
-                # Encode the frame to JPEG bytes for storage and potential proxying
-                ret, buffer = cv2.imencode('.jpg', frame)
-                if not ret:
-                    print("Could not encode frame to JPEG.")
+                # 將影像幀編碼為 JPEG 位元組，用於儲存和潛在的代理。
+                ret, buffer = cv2.imencode('.jpg', frame) # 將幀編碼為 JPEG 格式。
+                if not ret: # 如果編碼失敗。
+                    print("無法將幀編碼為 JPEG。")
                     continue
                 
-                frame_bytes = buffer.tobytes()
+                frame_bytes = buffer.tobytes() # 將緩衝區轉換為位元組。
 
-                with self._lock:
-                    self._latest_frame = frame_bytes # Store raw frame bytes
+                with self._lock: # 使用鎖來保護對 _latest_frame 的訪問。
+                    self._latest_frame = frame_bytes # 儲存原始影像幀的位元組。
 
-                # Process the raw frame (the one read directly by OpenCV)
+                # 處理原始影像幀（由 OpenCV 直接讀取）。
                 self._process_frame(frame)
 
-        except Exception as e:
-            print(f"An unexpected error occurred during streaming: {e}")
-        finally:
-            print("Stream processing thread stopped.")
-            cap.release()
-            self._running = False # Ensure running flag is false on exit
+        except Exception as e: # 捕獲任何意外的異常。
+            print(f"串流過程中發生意外錯誤: {e}")
+        finally: # 無論是否發生異常，都會執行的程式碼塊。
+            print("串流處理執行緒已停止。")
+            cap.release() # 釋放視訊捕捉物件。
+            self._running = False # 確保在退出時 _running 標誌為 False。
 
+    # 處理單個 OpenCV 影像幀的函數。
     def _process_frame(self, frame: np.ndarray):
         """
-        Processes a single OpenCV frame.
+        處理單個 OpenCV 影像幀。
         """
         try:
-            if frame is not None:
-                # --- Your OpenCV Image Analysis Logic Here ---
-                # Local, low-resource obstacle detection: Brightness Thresholding + Contour Detection
+            if frame is not None: # 確保影像幀不為空。
+                # --- 您的 OpenCV 影像分析邏輯在這裡 ---
+                # 本地、低資源的障礙物偵測：亮度閾值化 + 輪廓偵測。
                 
-                # Convert to grayscale
+                # 將影像轉換為灰度圖。
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-                # Apply Gaussian blur to reduce noise
+                # 應用高斯模糊以減少雜訊。
                 gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
-                # Define ROI (Region of Interest) - focus on the lower half of the image for close obstacles
-                height, width = gray.shape
-                roi_start_row = int(height * 0.5) # Start from middle of the image
-                roi = gray[roi_start_row:height, 0:width]
+                # 定義感興趣區域 (ROI) - 專注於影像的下半部分，用於偵測近距離障礙物。
+                height, width = gray.shape # 獲取灰度圖的高度和寬度。
+                roi_start_row = int(height * 0.5) # 從影像中間開始。
+                roi = gray[roi_start_row:height, 0:width] # 擷取 ROI 區域。
 
-                # Adaptive Thresholding to detect objects (assuming objects are darker than background)
-                # Adjust blockSize and C based on lighting conditions
+                # 自適應閾值化以偵測物體（假設物體比背景暗）。
+                # 根據光照條件調整 blockSize 和 C。
                 thresh = cv2.adaptiveThreshold(roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
 
-                # Morphological operations to clean up the mask
-                kernel = np.ones((3,3),np.uint8)
-                thresh = cv2.erode(thresh, kernel, iterations = 1)
-                thresh = cv2.dilate(thresh, kernel, iterations = 1)
+                # 形態學操作以清理遮罩。
+                kernel = np.ones((3,3),np.uint8) # 創建一個 3x3 的核心。
+                thresh = cv2.erode(thresh, kernel, iterations = 1) # 腐蝕操作。
+                thresh = cv2.dilate(thresh, kernel, iterations = 1) # 膨脹操作。
 
-                # Find contours in the thresholded image
+                # 在閾值化影像中查找輪廓。
                 contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-                obstacle_detected = False
-                obstacle_center_x = -1
-                obstacle_area_ratio = 0.0
+                obstacle_detected = False # 標誌，指示是否偵測到障礙物。
+                obstacle_center_x = -1 # 障礙物中心點的 X 座標。
+                obstacle_area_ratio = 0.0 # 障礙物面積佔 ROI 總面積的比例。
                 
-                if contours:
-                    # Find the largest contour (potential obstacle)
-                    largest_contour = max(contours, key=cv2.contourArea)
-                    area = cv2.contourArea(largest_contour)
+                if contours: # 如果偵測到輪廓。
+                    # 找到最大的輪廓（潛在的障礙物）。
+                    largest_contour = max(contours, key=cv2.contourArea) # 根據面積找到最大的輪廓。
+                    area = cv2.contourArea(largest_contour) # 計算最大輪廓的面積。
                     
-                    # Filter by area (avoid small noise) and position (ensure it's a relevant obstacle)
-                    # Adjust min_area_threshold based on camera view and expected obstacle size
-                    min_area_threshold = 500 # Example: adjust this value
-                    if area > min_area_threshold:
-                        obstacle_detected = True
-                        M = cv2.moments(largest_contour)
-                        if M["m00"] != 0:
-                            obstacle_center_x = int(M["m10"] / M["m00"]) # X-coordinate relative to ROI
-                            # Convert to global frame X-coordinate if needed: obstacle_center_x_global = obstacle_center_x
-                        obstacle_area_ratio = round(area / (roi.shape[0] * roi.shape[1]), 4)
+                    # 根據面積過濾（避免小雜訊）和位置（確保是相關的障礙物）。
+                    # 根據相機視角和預期障礙物大小調整 min_area_threshold。
+                    min_area_threshold = 500 # 範例：調整此值。
+                    if area > min_area_threshold: # 如果面積大於最小閾值。
+                        obstacle_detected = True # 設置障礙物偵測標誌為 True。
+                        M = cv2.moments(largest_contour) # 計算輪廓的矩。
+                        if M["m00"] != 0: # 避免除以零。
+                            obstacle_center_x = int(M["m10"] / M["m00"]) # 計算障礙物中心點的 X 座標（相對於 ROI）。
+                            # 如果需要，轉換為全域幀的 X 座標：obstacle_center_x_global = obstacle_center_x
+                        obstacle_area_ratio = round(area / (roi.shape[0] * roi.shape[1]), 4) # 計算障礙物面積比例。
 
-                        # Optionally, draw the contour on the original frame for visualization
+                        # 可選：在原始影像幀上繪製輪廓以進行視覺化。
                         # cv2.drawContours(frame[roi_start_row:height, 0:width], [largest_contour], -1, (0, 255, 0), 2)
 
-                with self._lock:
-                    self._latest_processed_frame = frame # Store the original frame for display
-                    self._latest_visual_analysis_results = {
+                with self._lock: # 使用鎖來保護對共享資料的訪問。
+                    self._latest_processed_frame = frame # 儲存原始影像幀以供顯示。
+                    self._latest_visual_analysis_results = { # 儲存視覺分析結果。
                         "obstacle_detected": obstacle_detected,
                         "obstacle_center_x": obstacle_center_x,
                         "obstacle_area_ratio": obstacle_area_ratio
                     }
             else:
-                print("Failed to decode frame for processing.")
+                print("無法解碼幀以進行處理。")
 
-        except Exception as e:
-            print(f"Error during OpenCV frame processing: {e}")
+        except Exception as e: # 捕獲 OpenCV 影像處理過程中可能發生的任何異常。
+            print(f"OpenCV 影像處理過程中發生錯誤: {e}")
 
+    # 啟動串流處理器的函數。
     def start(self):
-        if not self._running:
-            if not self.stream_url:
-                print("Warning: Stream URL not set. Call update_stream_source() first.")
+        if not self._running: # 如果串流處理器未運行。
+            if not self.stream_url: # 如果串流 URL 未設定。
+                print("警告: 串流 URL 未設定。請先呼叫 update_stream_source()。")
                 return
-            print("Starting camera stream processor...")
-            self._running = True
-            self._thread = threading.Thread(target=self._get_mjpeg_stream)
-            self._thread.daemon = True # Allow the main program to exit even if thread is running
-            self._thread.start()
-            print("Camera stream processor started.")
+            print("正在啟動相機串流處理器...")
+            self._running = True # 設置運行標誌為 True。
+            self._thread = threading.Thread(target=self._get_mjpeg_stream) # 創建一個新執行緒來運行 _get_mjpeg_stream 函數。
+            self._thread.daemon = True # 將執行緒設置為守護執行緒，允許主程式在執行緒運行時退出。
+            self._thread.start() # 啟動執行緒。
+            print("相機串流處理器已啟動。")
         else:
-            print("Camera stream processor is already running.")
+            print("相機串流處理器已在運行中。")
 
+    # 停止串流處理器的函數。
     def stop(self):
-        if self._running:
-            print("Stopping camera stream processor...")
-            self._running = False
-            if self._thread and self._thread.is_alive():
-                self._thread.join(timeout=5) # Wait for the thread to finish
-                if self._thread.is_alive():
-                    print("Warning: Stream thread did not terminate gracefully.")
-            print("Camera stream processor stopped.")
+        if self._running: # 如果串流處理器正在運行。
+            print("正在停止相機串流處理器...")
+            self._running = False # 設置運行標誌為 False，以停止執行緒。
+            if self._thread and self._thread.is_alive(): # 如果執行緒存在且仍在運行。
+                self._thread.join(timeout=5) # 等待執行緒完成，最多等待 5 秒。
+                if self._thread.is_alive(): # 如果執行緒在超時後仍然在運行。
+                    print("警告: 串流執行緒未能正常終止。")
+            print("相機串流處理器已停止。")
         else:
-            print("Camera stream processor is not running.")
+            print("相機串流處理器未在運行中。")
 
+    # 獲取最新影像幀和分析結果的函數。
     def get_latest_frame(self):
-        """Returns the latest raw frame (JPEG bytes) and its processed version (OpenCV image)."""
-        with self._lock:
-            return self._latest_frame, self._latest_processed_frame, self._latest_visual_analysis_results
+        """返回最新的原始影像幀（JPEG 位元組）及其處理後的版本（OpenCV 影像）。"""
+        with self._lock: # 使用鎖來保護對共享資料的訪問。
+            return self._latest_frame, self._latest_processed_frame, self._latest_visual_analysis_results # 返回最新的原始幀、處理後的幀和視覺分析結果。
 
+    # 檢查串流處理器是否正在運行的函數。
     def is_running(self):
-        return self._running
+        return self._running # 返回 _running 標誌的當前狀態。
 
-# Example Usage (for testing this module independently)
+# 範例用法（用於獨立測試此模組）。
 if __name__ == "__main__":
-    # This part will be removed or modified as main.py will manage the instance
-    print("This module is intended to be used as part of the main FastAPI application.")
-    print("Please run `python main.py` to start the application.")
-    # Original test code is commented out or removed as it's no longer relevant for direct execution.
+    # 這部分將被移除或修改，因為 main.py 將管理實例。
+    print("此模組旨在作為主 FastAPI 應用程式的一部分使用。")
+    print("請運行 `python main.py` 來啟動應用程式。")
+    # 原始測試程式碼已被註釋掉或移除，因為它與直接執行不再相關。
