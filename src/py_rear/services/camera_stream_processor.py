@@ -26,7 +26,7 @@ class CameraStreamProcessor:
 
         self.esp32_cam_ip = esp32_cam_ip # 更新 ESP32-CAM 的 IP 位址。
         # 根據 IP 位址構建影像串流的 URL。通常 ESP32-CAM 的串流埠是 81。
-        self.stream_url = f"http://{self.esp32_cam_ip}:81/stream"
+        self.stream_url = f"http://{self.esp32_cam_ip}/stream"
         print(f"相機串流來源已更新為: {self.stream_url}")
 
         # 如果串流正在運行，則停止並使用新的 IP 重新啟動。
