@@ -1,22 +1,23 @@
-# GUI 控制與影像分析實現原理
+# GUI 控制與 API 互動原理
 
-本文件詳細解釋了 Miniauto 專案中，使用者如何透過網頁介面 (GUI) 控制車輛移動，以及如何處理和顯示來自攝影機的影像與分析結果。整個流程橫跨前端、後端和 Arduino 硬體，形成一個完整的閉環控制與感知系統。
+本文件詳細解釋了 Miniauto 專案中，使用者如何透過網頁介面 (GUI) 控制車輛移動，以及 GUI 如何與後端 API 進行互動以顯示影像和獲取分析結果。整個流程橫跨前端、後端和 Arduino 硬體，形成一個完整的閉環控制與感知系統。
 
 ## 總覽
 
-Miniauto 的 GUI 系統遵循一個「**前端發送控制、後端中繼指令、硬體拉取執行**」的控制模式，並結合了「**前端直接串流、後端分析提供結果**」的影像處理模式：
+Miniauto 的 GUI 系統遵循一個「**前端發送控制、後端中繼指令、硬體拉取執行**」的控制模式，並結合了「**前端透過後端 API 獲取串流與分析結果**」的影像顯示模式：
 
 1.  **前端 (Frontend)**：
     *   捕捉使用者的鍵盤輸入，並將其轉換為控制指令，透過 HTTP API 發送給後端。
-    *   直接連接並顯示來自 ESP32-S3 攝影機的 MJPEG 串流。
-    *   定期向後端請求最新的影像分析結果。
+    *   透過後端提供的 API (`/api/camera/stream`) 連接並顯示來自攝影機的 MJPEG 串流。
+    *   定期向後端請求最新的影像分析結果 (`/api/camera/analysis`)。
 2.  **後端 (Backend)**：
     *   接收前端的控制指令，將其儲存在一個全域狀態變數中，等待硬體拉取。
-    *   運行一個獨立的攝影機串流處理器，負責從 ESP32-S3 攝影機拉取影像串流，進行即時影像分析（例如障礙物檢測），並儲存分析結果。
-    *   提供 API 端點供前端獲取最新的影像分析結果。
+    *   作為攝影機影像串流的代理，從 ESP32-S3 攝影機拉取影像，進行處理和分析，並將處理後的影像串流和分析結果透過 API 提供給前端。
+    *   在啟動時，可選擇性地透過 UDP 廣播自己的 IP 位址，供 Arduino UNO 進行服務發現。
 3.  **硬體 (Arduino)**：
+    *   透過監聽 UDP 廣播來動態發現後端伺服器的 IP 位址。
     *   以固定的時間間隔，主動向後端發送請求，拉取最新的控制指令，並執行它。
-    *   （ESP32-S3 攝影機）負責生成 MJPEG 影像串流，供前端和後端處理器直接連接。
+    *   （ESP32-S3 攝影機）負責生成 MJPEG 影像串流，供後端處理器直接連接。
 
 ---
 
@@ -28,7 +29,7 @@ Miniauto 的 GUI 系統遵循一個「**前端發送控制、後端中繼指令�
 -   **狀態追蹤**: 一個名為 `activeKeys` 的物件被用來追蹤當前有哪些按鍵正被按住。
 -   **指令生成**: `updateMotorControl` 函式會檢查 `activeKeys` 的狀態，並根據被按下的方向鍵（`w`, `a`, `s`, `d`）來設定馬達速度 (`motorSpeed`) 和方向角度 (`directionAngle`)。
 -   **API 呼叫 (控制)**: 只有當控制狀態（速度或方向）發生改變時，`sendManualControl` 函式才會被觸發。它使用 `fetch` API 向後端的 `/api/manual_control` 端點發送一個 `POST` 請求，請求的 body 中包含了 JSON 格式的控制指令。
--   **影像串流顯示**: 前端直接透過 `<img>` 標籤的 `src` 屬性連接到 ESP32-S3 攝影機的 MJPEG 串流 URL (例如 `http://<ESP32_CAM_IP>:81/stream`)。這意味著影像資料流不經過 Python 後端，減輕了後端的負擔。
+-   **影像串流顯示**: 前端透過 `<img>` 標籤的 `src` 屬性連接到後端的 `/api/camera/stream` 端點。這意味著影像資料流會經過 Python 後端進行處理和轉發。
 -   **影像分析結果獲取**: 前端會定期向後端的 `/api/camera/analysis` 端點發送請求，獲取最新的影像分析結果（例如障礙物檢測狀態、位置等），並可以在介面上進行顯示或處理。
 
 ```javascript
@@ -80,7 +81,7 @@ methods: {
         if (this.streamUrl) {
             this.streamUrl = ''; // 停止串流
         } else {
-            this.streamUrl = `http://${this.esp32CamIp}:81/stream`; // 啟動串流
+            this.streamUrl = `/api/camera/stream`; // 啟動串流，指向後端代理
         }
     },
     async fetchAnalysisResults() {
@@ -95,11 +96,19 @@ methods: {
 
 ---
 
-### 2. 後端 (`main.py`, `vehicle_api.py`, `camera.py`, `camera_stream_processor.py`)：指令中繼與影像分析
+### 2. 後端 API 互動 (`main.py`, `vehicle_api.py`, `camera.py`)
 
-後端作為一個中介層，負責維護車輛的狀態，包括當前的控制模式和手動控制指令，同時也負責處理來自攝影機的影像並提供分析結果。
+後端作為一個中介層，負責維護車輛的狀態，包括當前的控制模式和手動控制指令，並透過 API 提供影像串流和分析結果。
 
-#### 2.1 控制指令中繼 (`vehicle_api.py`)
+#### 2.1 伺服器 IP 廣播 (Service Discovery)
+
+為了讓 Arduino UNO 能夠動態發現後端伺服器的 IP 位址，後端引入了 UDP 廣播機制：
+
+-   **`broadcast_server_ip.py` 腳本**: 這是一個獨立的 Python 腳本，負責向區域網路廣播後端伺服器的 IP 位址和埠號。它會每秒發送一次 UDP 封包到埠 5005，訊息格式為 `MINIAUTO_SERVER_IP:<server_ip>:8000`。
+-   **`main.py` 中的生命週期管理**: `main.py` 在啟動時，可以選擇性地（透過命令列參數 `b_ip`）啟動 `broadcast_server_ip.py` 作為子進程。這個子進程的生命週期由 FastAPI 應用程式管理，並在應用程式關閉時終止。
+-   **`vehicle_api.py` 中的停止機制**: 當 Arduino UNO 透過 `/api/register_camera` 端點成功註冊 ESP32-CAM 的 IP 位址後，`vehicle_api.py` 會觸發停止 IP 廣播的指令，避免不必要的網路流量。
+
+#### 2.2 控制指令中繼 (`vehicle_api.py`)
 
 -   **API 端點**: 使用 FastAPI 框架，`@router.post("/api/manual_control")` 裝飾器定義了一個端點來接收前端的請求。
 -   **資料驗證**: `ManualControlRequest` Pydantic 模型確保了傳入的資料符合預期的格式。
@@ -132,37 +141,31 @@ async def manual_control(request: ManualControlRequest):
     return {"message": "Manual control command received"}
 ```
 
-#### 2.2 攝影機串流處理與影像分析 (`camera.py`, `camera_stream_processor.py`)
+#### 2.3 攝影機 API (`camera.py`)
 
-這部分是後端處理影像的核心。
+這部分是後端提供給前端的 API 介面，用於影像串流和分析結果的獲取。
 
--   **`CameraStreamProcessor` 類別 (`camera_stream_processor.py`)**:
-    *   **職責**: 負責連接到 ESP32-S3 攝影機的 MJPEG 串流 (`http://<IP>:81/stream`)，並在一個獨立的執行緒中持續讀取影像幀。
-    *   **串流讀取**: 使用 `cv2.VideoCapture` 來處理 MJPEG 串流的連接、讀取和解碼，這比手動解析 MJPEG 邊界更為高效和穩健。
-    *   **影像分析**: 在 `_process_frame` 方法中，對每個讀取到的影像幀執行 OpenCV 影像處理和分析（例如，透過亮度閾值和輪廓檢測進行障礙物檢測）。
-    *   **結果儲存**: 將最新的原始影像幀（JPEG 格式）和影像分析結果儲存在內部變數中，並透過執行緒鎖 (`threading.Lock`) 確保多執行緒存取安全。
-    *   **生命週期管理**: 提供 `start()` 和 `stop()` 方法來控制串流處理執行緒的啟動和停止。
-
--   **攝影機 API (`camera.py`)**:
-    *   **職責**: 提供 FastAPI API 端點，用於控制 `CameraStreamProcessor` 的生命週期，並向前端暴露影像分析結果。
-    *   **`camera_processor` 全域實例**: 在 `main.py` 啟動時，會創建 `CameraStreamProcessor` 的實例並賦值給 `camera.py` 中的 `camera_processor` 全域變數，確保整個應用程式共享同一個處理器。
-    *   **API 端點**:
-        *   `/camera/start`: 啟動攝影機串流處理器。
-        *   `/camera/stop`: 停止攝影機串流處理器。
-        *   `/camera/status`: 查詢攝影機串流處理器的運行狀態。
-        *   `/camera/analysis`: **核心端點**，返回 `CameraStreamProcessor` 中最新的影像分析結果。這個端點取代了直接提供影像串流的舊有設計，將後端職責從影像代理轉變為影像分析結果提供者。
+-   **職責**: 提供 FastAPI API 端點，用於控制 `CameraStreamProcessor` 的生命週期，並向前端暴露影像分析結果，同時**代理影像串流**。
+-   **`camera_processor` 全域實例**: 在 `main.py` 啟動時，會創建 `CameraStreamProcessor` 的實例並賦值給 `camera.py` 中的 `camera_processor` 全域變數，確保整個應用程式共享同一個處理器。
+-   **API 端點**:
+    *   `/camera/start`: 啟動攝影機串流處理器。
+    *   `/camera/stop`: 停止攝影機串流處理器。
+    *   `/camera/status`: 查詢攝影機串流處理器的運行狀態。
+    *   `/camera/analysis`: **核心端點**，返回 `CameraStreamProcessor` 中最新的影像分析結果。
+    *   `/api/camera/stream`: **影像串流代理端點**，它會從 `CameraStreamProcessor` 獲取處理後的影像幀，並以 `multipart/x-mixed-replace` 格式轉發給前端，實現 MJPEG 串流。
 
 **架構轉變原因總結**:
-*   **前端直接消費 ESP32-S3 串流**: 減輕了 Python 後端的影像代理負擔，提高了效率。
-*   **後端專注於分析**: Python 後端現在主要專注於對影像進行深度處理和分析，提供高價值的結構化數據。
+*   **後端統一影像來源**: 所有影像現在都透過後端代理，方便集中處理、分析和轉發。
+*   **後端專注於分析與代理**: Python 後端現在主要專注於對影像進行深度處理和分析，並作為影像串流的可靠代理。
 *   **簡化與穩健性**: 使用 `cv2.VideoCapture` 簡化了串流處理邏輯，提高了系統的穩健性。
 
 ---
 
-### 3. Arduino (`arduino_uno.ino`)：指令的拉取與執行
+### 3. Arduino (`arduino_uno.ino`)：伺服器發現、指令的拉取與執行
 
-Arduino 作為最終的執行者，它採用「**主動拉取 (Polling)**」的模式從後端獲取指令。
+Arduino 作為最終的執行者，它採用「**主動拉取 (Polling)**」的模式從後端獲取指令，並透過 UDP 廣播進行伺服器發現。
 
+-   **伺服器 IP 發現**: Arduino 在啟動後，會監聽來自後端伺服器的 UDP 廣播訊息 (`MINIAUTO_SERVER_IP:<ip>:<port>`)，從中解析出後端伺服器的 IP 位址和埠號，以便建立後續的 HTTP 連線。
 -   **定時輪詢**: 在主 `loop()` 函式中，一個非阻塞的計時器會每隔 200 毫秒呼叫一次 `syncWithServer()` 函式。
 -   **發送同步請求**: `syncWithServer()` 會呼叫 `httpPost()`，向後端的 `/api/sync` 端點發送一個 `POST` 請求。這個請求的 body 中包含了 Arduino 感測器的最新狀態資料。
 -   **後端回應**: 後端的 `sync_data` 函式在收到請求後，會檢查 `current_control_mode`。在手動模式下，它會讀取之前儲存的全域變數，並將這些指令作為對 `/api/sync` 請求的回應，發送回給 Arduino。
@@ -175,9 +178,17 @@ void loop() {
   unsigned long currentTime = millis();
   // 每 200ms 執行一次
   if (currentTime - lastCommandPollTime >= commandPollInterval) {
-    syncWithServer();
+    // 確保伺服器 IP 已被發現後才進行同步
+    if (g_server_ip[0] != '\0') { 
+      syncWithServer();
+    } else {
+      // 這裡可以加入一些等待或重試邏輯，或只是等待廣播
+      Serial.println(F("伺服器 IP 尚未發現。正在等待廣播..."));
+    }
     lastCommandPollTime = currentTime;
   }
+  // 處理來自 ESP-01S 的 UDP 廣播訊息，以發現伺服器 IP
+  // ... (相關的 UDP 監聽和解析邏輯)
 }
 
 void syncWithServer() {
@@ -226,4 +237,3 @@ void Velocity_Controller(uint16_t angle, uint8_t velocity, int8_t rot) {
   
   Motors_Set(velocity_0, velocity_1, velocity_2, velocity_3);
 }
-```
