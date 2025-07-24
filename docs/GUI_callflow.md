@@ -237,3 +237,50 @@ void Velocity_Controller(uint16_t angle, uint8_t velocity, int8_t rot) {
   
   Motors_Set(velocity_0, velocity_1, velocity_2, velocity_3);
 }
+
+
+``` mermaid 
+flowchart TD
+    %% 前端 GUI
+    subgraph GUI ["前端 GUI - index.html"]
+        GUI_Keys["鍵盤事件偵測"]
+        GUI_State["控制狀態追蹤"]
+        GUI_Cmd["控制指令產生"]
+        GUI_Send["傳送控制指令"]
+        GUI_Stream["影像串流顯示"]
+        GUI_Analysis["獲取分析結果"]
+    end
+
+    %% 後端 FastAPI
+    subgraph Backend ["後端 FastAPI"]
+        API_Manual["API 接收控制指令"]
+        API_State["儲存全域控制狀態"]
+        API_Stream["MJPEG 串流代理"]
+        API_Analysis["影像分析 API"]
+        API_Sync["指令同步 API"]
+        API_Broadcast["UDP 廣播 IP"]
+    end
+
+    %% 硬體區塊
+    subgraph Hardware ["硬體設備"]
+        ESP32["ESP32 CAM - MJPEG 串流"]
+        Arduino["Arduino UNO"]
+        UDP_Discover["接收廣播 IP"]
+        Sync_Loop["定時請求指令"]
+        Execute_Ctrl["執行 Velocity 控制"]
+    end
+
+    %% 前端流程
+    GUI_Keys --> GUI_State --> GUI_Cmd --> GUI_Send --> API_Manual --> API_State
+    GUI_Stream --> API_Stream --> ESP32
+    GUI_Analysis --> API_Analysis
+
+    %% 後端流程
+    API_Broadcast --> UDP_Discover
+    API_Sync --> Sync_Loop --> Execute_Ctrl
+
+    %% 補連線
+    Sync_Loop --> API_Sync
+    Arduino --> UDP_Discover
+    Arduino --> Sync_Loop
+```

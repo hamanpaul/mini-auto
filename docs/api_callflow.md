@@ -44,3 +44,43 @@ Miniauto 系統的通訊核心是 Arduino (作為客戶端) 定期向 Python Fas
 ## 3. 總結
 
 Miniauto 的 API 呼叫流程設計為一種基於請求-回應的同步機制，其中伺服器對客戶端的指令是基於前一個狀態的「預期」指令。理解這種「時間差」對於系統的行為分析和未來控制演算法的設計至關重要。
+
+```mermaid
+flowchart TD
+    %% Arduino 通訊流程
+    subgraph Arduino_Client ["Arduino (客戶端)"]
+        A1["讀取當前狀態 State_A"]
+        A2["執行上一個指令 Command_Prev"]
+        A3["POST /api/sync 傳送狀態"]
+        A4["接收伺服器指令 Command_B"]
+        A5["下一週期開始，執行 Command_B"]
+    end
+
+    %% FastAPI 通訊流程
+    subgraph FastAPI_Server ["FastAPI Server"]
+        S1["接收 State_A"]
+        S2["依據模式與狀態分析"]
+        S3["生成 Command_B"]
+        S4["回傳 Command_B"]
+    end
+
+    %% 外部控制介面
+    subgraph External_Interface ["外部控制介面 (如 GUI)"]
+        E1["POST /api/manual_control 設定手動指令"]
+        E2["POST /api/set_control_mode 切換控制模式"]
+        E3["GET /api/latest_data 查詢車輛狀態"]
+    end
+
+    %% 擴充功能
+    subgraph IP_Registration ["攝影機 IP 註冊"]
+        R1["POST /api/register_camera"]
+    end
+
+    %% 時間流程與箭頭
+    A1 --> A2 --> A3 --> S1
+    S1 --> S2 --> S3 --> S4 --> A4 --> A5
+    E1 --> S2
+    E2 --> S2
+    E3 --> S1
+    R1 --> S1
+```

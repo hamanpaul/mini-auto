@@ -76,3 +76,41 @@
 5.  **[Backend (API) -> GUI]**: 後端將處理後的影像幀以串流形式轉發給前端 GUI，並將分析結果以 JSON 形式返回給前端。
 
 這個流程會不斷循環，從而實現了在使用者介面中看到經過即時處理和分析的遠端影像。
+
+```mermaid
+flowchart TD
+
+    %% 第一階段：ESP32 CAM 影像來源
+    subgraph ESP32_CAM ["ESP32 CAM 裝置"]
+        E1["啟動與相機初始化"]
+        E2["連接 Wi-Fi 並獲得 IP"]
+        E3["啟動 Web Server 提供 MJPEG 串流"]
+        E4["提供原始影像於 stream 路徑"]
+    end
+
+    %% 第二階段：Python FastAPI 後端
+    subgraph Backend ["Python FastAPI 後端"]
+        B1["Camera Processor 發起請求至 ESP32"]
+        B2["讀取影像幀於背景執行緒"]
+        B3["使用 OpenCV 等處理與分析"]
+        B4["儲存處理後影像與分析結果"]
+        B5["/api/camera/stream 提供 MJPEG 串流"]
+        B6["/api/camera/analysis 提供分析結果 JSON"]
+    end
+
+    %% 第三階段：前端 Vue.js GUI
+    subgraph Frontend ["前端 Web GUI"]
+        F1["瀏覽器載入 index.html"]
+        F2["img 請求串流路徑"]
+        F3["畫面中顯示串流影像"]
+        F4["JavaScript 定期發送分析請求"]
+        F5["顯示障礙物資訊與車輛狀態"]
+    end
+
+    %% 流向關係
+    E4 --> B1
+    B1 --> B2 --> B3 --> B4
+    B4 --> B5 --> F2 --> F3
+    B4 --> B6 --> F4 --> F5
+    F1 --> F2
+```
