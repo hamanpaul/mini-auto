@@ -88,55 +88,67 @@
 這份架構分析為您提供了當前系統的藍圖，並指明了未來擴展的方向。
 
 ```mermaid
-graph TD
+flowchart LR
+    %% 左側：PC 區
+    subgraph PC [PC]
+        subgraph GUI [GUI]
+            View["即時影像"]
+            Manual["手動操作"]
+            Switch["功能切換"]
+            Debug["除錯視窗"]
+        end
 
-    %% --- 使用者端 ---
-    subgraph 使用者端_Client
-        User[開發者 / 使用者]
+        subgraph IMG ["Image Analysis"]
+            Conn["系統連接"]
+            Analy["影像分析"]
+            Feed["畫面提供"]
+            CmdUpdate["操控命令更新"]
+        end
+
+        subgraph API [FastAPI]
+            Status["狀態更新"]
+            Control["車輛操控"]
+        end
     end
 
-    %% --- 主機應用程式 ---
-    subgraph 主機應用程式_Python_Host_Application
-        direction LR
-        Uvicorn[Uvicorn ASGI Server]
-        FastAPI[FastAPI Core]
-        APIs["動態 API 模組\n/status, /forward 等"]
-        Pydantic[Pydantic 資料驗證]
-        OpenCV["(未來功能) OpenCV 影像分析"]
-        Uvicorn --> FastAPI
-        FastAPI --> APIs
-        APIs -- 使用 --> Pydantic
-        FastAPI -- 影像串流（預定） --> OpenCV
+    %% 中間：WiFi 控制橋接器
+    subgraph WiFi_Controller [WiFi 控制模組]
+        HCEDU["Hcedu01"]
     end
 
-    %% --- 小車硬體 ---
-    subgraph 小車硬體_MiniAuto_Vehicle
-        direction LR
-        Arduino[Arduino UNO]
-        WiFi[WiFi 模組]
-        Motors[馬達與感測器]
-        ESP32[ESP32-S3-CAM]
-        CameraDriver[esp32-camera 驅動]
-        CameraSensor[GC2415 鏡頭感測器]
+	%% 小車：攝影模組及UNO 與感測模組
+	subgraph Mini-Auto ["Mini-auto"]
+		%% 右上：攝影模組
+		subgraph ESP32_CAM_Module ["ESP32-CAM 模組"]
+			CAM["ESP32-CAM"]
+		end
 
-        Arduino -- 控制 --> Motors
-        Arduino -- UART --> WiFi
-        ESP32 -- 使用 --> CameraDriver
-        CameraDriver -- SCCB/數據介面 --> CameraSensor
-    end
+		%% 右下：UNO 與感測模組
+		subgraph UNO_Module ["UNO + 控制/感測模組"]
+			UNO["UNO"]
+			ESP01["ESP-01 (WiFi 模組)"]
+			M1["Motor"]
+			Thermo["AMG8833"]
+			UltraSound["UltraSound"]
+			LED["LED"]
+			Volt["Volt"]
+		end
+	end
 
-    %% --- 系統連線 ---
-    User -- HTTP GET/POST --> Uvicorn
-    WiFi -- "1. HTTP POST /status\n(車輛狀態)" --> APIs
-    APIs -- "2. HTTP GET /command\n(移動指令)" --> WiFi
-    ESP32 -- "3. HTTP POST /image_stream\n(影像數據，預定)" --> FastAPI
+    %% 資料與控制流
+    View --> Manual --> Switch --> Debug
+    GUI --> IMG
+    Conn --> Analy --> Feed --> CmdUpdate
+    IMG --> API
+    Status --> Control
+    API -. WiFi .-> HCEDU
+    HCEDU -. WiFi .-> CAM
+    HCEDU -. WiFi .-> ESP01
+    UNO --> ESP01
+    UNO --> M1
+    UNO --> Thermo
+    UNO --> UltraSound
+    UNO --> LED
+    UNO --> Volt
 
-    %% --- 樣式定義 ---
-    classDef host fill:#D9EAD3,stroke:#333,stroke-width:2px;
-    classDef vehicle fill:#FCE5CD,stroke:#333,stroke-width:2px;
-    classDef user fill:#CFE2F3,stroke:#333,stroke-width:2px;
-
-    class User user;
-    class Uvicorn,FastAPI,APIs,Pydantic,OpenCV host;
-    class Arduino,WiFi,Motors,ESP32,CameraDriver,CameraSensor vehicle;
 ```
