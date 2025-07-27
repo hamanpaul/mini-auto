@@ -34,77 +34,79 @@
 ## 2. 主要 API 呼叫流程圖
 
 ```mermaid
-graph LR
-    %% 區塊一：ESP32
-    subgraph A1 [ESP32]
-        A1_1[啟動]
-        A1_2[定期發送 POST /api/sync]
-        A1_3[接收控制指令]
-        A1_4[執行控制邏輯]
-        A1_1 --> A1_2 --> A1_3 --> A1_4 --> A1_2
-    end
+flowchart TD
 
-    %% 區塊二：FastAPI Server（拆成三塊）
-    subgraph B1 [FastAPI 控制 API]
-        B1_1[接收 /api/sync]
-        B1_2[判斷控制模式]
-        B1_3a[手動模式]
-        B1_3b[避障模式]
-        B1_3c[自主模式]
-        B1_4[生成控制指令]
-        B1_5[回傳給 ESP32]
-        B1_1 --> B1_2
-        B1_2 --> B1_3a --> B1_4
-        B1_2 --> B1_3b --> B1_4
-        B1_2 --> B1_3c --> B1_4
-        B1_4 --> B1_5
-    end
+%% 區塊 A：ESP32-S3-CAM
+subgraph A[ESP32-S3-CAM]
+    A1[初始化]
+    A2[發送 /api/sync]
+    A3[接收控制指令]
+    A4[執行動作]
+    A1 --> A2 --> A3 --> A4 --> A2
+end
 
-    subgraph B2 [FastAPI 控制設定 API]
-        B2_1[POST /manual_control]
-        B2_2[POST /set_control_mode]
-        B2_3[更新控制參數/模式]
-        B2_1 --> B2_3
-        B2_2 --> B2_3
-    end
+%% 區塊 B：FastAPI 控制流程
+subgraph B[FastAPI 控制流程]
+    B1[接收 /api/sync]
+    B2[判斷控制模式]
+    B3a[手動模式]
+    B3b[避障模式]
+    B3c[自主模式]
+    B4[生成控制指令]
+    B5[回傳指令]
+    B1 --> B2
+    B2 --> B3a --> B4
+    B2 --> B3b --> B4
+    B2 --> B3c --> B4
+    B4 --> B5
+end
 
-    subgraph B3 [FastAPI 資料查詢 API]
-        B3_1[GET /latest_data]
-        B3_2[GET /logs]
-        B3_3[查詢資料/日誌]
-        B3_1 --> B3_3
-        B3_2 --> B3_3
-    end
+%% 區塊 C：控制參數設定
+subgraph C[控制參數與模式設定]
+    C1[手動控制 /manual_control]
+    C2[設定模式 /set_control_mode]
+    C3[更新參數與模式]
+    C1 --> C3
+    C2 --> C3
+end
 
-    %% 區塊三：Camera Stream APIs
-    subgraph C1 [Camera API]
-        C1_1[POST /register_camera]
-        C1_2[啟動 CameraStreamProcessor]
-        C1_3[POST /camera/start]
-        C1_4[POST /camera/stop]
-        C1_5[GET /camera/status]
-        C1_6[GET /camera/analysis]
-        C1_7[GET /camera/stream]
-        C1_1 --> C1_2
-        C1_3 --> C1_2
-        C1_4 --> C1_2
-    end
+%% 區塊 D：資料查詢
+subgraph D[資料查詢]
+    D1[查詢 /latest_data]
+    D2[查詢 /logs]
+    D3[傳回資料或日誌]
+    D1 --> D3
+    D2 --> D3
+end
 
-    %% 區塊四：CameraStreamProcessor
-    subgraph D1 [CameraStreamProcessor（背景執行緒）]
-        D1_1[連接 ESP32 MJPEG]
-        D1_2[影像處理]
-        D1_3[儲存分析結果與影像]
-        D1_1 --> D1_2 --> D1_3 --> D1_2
-    end
+%% 區塊 E：Camera 控制 API
+subgraph E[Camera API 控制]
+    E1[註冊 /register_camera]
+    E2[啟動串流 /camera/start]
+    E3[停止串流 /camera/stop]
+    E4[查詢狀態 /camera/status]
+    E5[取得分析 /camera/analysis]
+    E6[取得影像 /camera/stream]
+    E1 --> F1
+    E2 --> F1
+    E3 --> F2
+end
 
-    %% 區塊間連線
-    A1_2 --> B1_1
-    B1_5 --> A1_3
+%% 區塊 F：Camera Stream Processor
+subgraph F[Camera Stream 處理器]
+    F1[啟動並連線 MJPEG]
+    F2[停止處理器]
+    F3[影像分析]
+    F4[儲存結果與幀]
+    F1 --> F3 --> F4 --> F3
+end
 
-    C1_2 --> D1_1
-    D1_3 --> C1_6
-    D1_3 --> C1_7
+%% 邏輯連線
+A2 --> B1
+B5 --> A3
+F4 --> E5
+F4 --> E6
+F3 --> B3b
+F3 --> B3c
 
-    D1_2 --> B1_3b
-    D1_2 --> B1_3c
+```
