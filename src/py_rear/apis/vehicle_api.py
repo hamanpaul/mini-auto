@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Body, Depends, Request # 導入 FastAPI 相關模組：APIRouter 用於定義路由，HTTPException 用於處理 HTTP 錯誤，Body 用於從請求體中獲取資料，Depends 用於依賴注入，Request 用於訪問請求物件。
+from fastapi import APIRouter, HTTPException, Body, Depends, Request # 導入 FastAPI 相關模組：APIRouter 用於定義路由，HTTPException 用於處理 HTTP 錯誤，Body 用於從請求體中獲取資料，Depends 用於依賴注入，Request 用於訪問請求物件。
 from pydantic import BaseModel # 導入 BaseModel，用於定義資料模型，實現資料驗證和序列化。
 from enum import Enum # 導入 Enum，用於創建枚舉類型。
 from typing import Optional, List # 導入 Optional 和 List，用於型別提示。

@@ -20,18 +20,18 @@
      ```bash
      curl -X POST http://127.0.0.1:8000/api/sync \
           -H "Content-Type: application/json" \
-          -d '{"s": 79, "v": 785, "t": [[2550, 2600], [2575, 2625]], "i": "192.168.1.200"}'
+          -d '{"s": 79, "v": 785, "t": [[2550, 2600], [2575, 2625]], "i": "192.168.1.200", "u": 50}'
      ```
-   - **預期結果**: 返回 JSON 格式的指令，例如 `{"c":0,"m":0,"d":0,"a":0}` (具體值取決於當前控制模式的預設行為)。
+   - **預期結果**：返回 JSON 格式的指令，例如 `{"c":0,"m":0,"d":0,"a":0}` (具體值取決於當前控制模式的預設行為)。
 
 2. **同步不帶熱成像數據的狀態**
    - **命令**:
      ```bash
      curl -X POST http://127.0.0.1:8000/api/sync \
           -H "Content-Type: application/json" \
-          -d '{"s": 78, "v": 750}'
+          -d '{"s": 78, "v": 750, "u": 50}'
      ```
-   - **預期結果**: 返回 JSON 格式的指令，例如 `{"c":0,"m":0,"d":0,"a":0}`。
+   - **預期結果**：返回 JSON 格式的指令，例如 `{"c":0,"m":0,"d":0,"a":0}`。
 
 ### 2. POST /api/register_camera
 
@@ -46,7 +46,7 @@
           -H "Content-Type: application/json" \
           -d '{"i": "192.168.1.100"}'
      ```
-   - **預期結果**: 返回 `{"message":"ESP32-S3 IP registered successfully"}`。
+   - **預期結果**：返回 `{"message":"Camera IP registered successfully."}`。
 
 ### 3. POST /api/manual_control
 
@@ -61,7 +61,7 @@
           -H "Content-Type: application/json" \
           -d '{"m": 50, "d": 90, "a": 45, "c": 1}'
      ```
-   - **預期結果**: 返回 `{"message":"Manual control command updated"}`。
+   - **預期結果**：返回 `{"message":"Manual control commands set successfully."}`。
 
 ### 4. POST /api/set_control_mode
 
@@ -76,7 +76,7 @@
           -H "Content-Type: application/json" \
           -d '{"mode": "avoidance"}'
      ```
-   - **預期結果**: 返回 `{"message":"Control mode set to avoidance"}`。
+   - **預期結果**：返回 `{"message":"Control mode set to avoidance."}`。
 
 2. **切換至手動模式**
    - **命令**:
@@ -85,7 +85,7 @@
           -H "Content-Type: application/json" \
           -d '{"mode": "manual"}'
      ```
-   - **預期結果**: 返回 `{"message":"Control mode set to manual"}`。
+   - **預期結果**：返回 `{"message":"Control mode set to manual."}`。
 
 ### 5. GET /api/latest_data
 
@@ -107,19 +107,19 @@
           -d '{"i": "192.168.1.200"}'
      curl -X POST http://127.0.0.1:8000/api/sync \
           -H "Content-Type: application/json" \
-          -d '{"s": 100, "v": 800, "t": [[100, 200], [300, 400]], "i": "192.168.1.200"}'
+          -d '{"s": 100, "v": 800, "t": [[100, 200], [300, 400]], "i": "192.168.1.200", "u": 50}'
      ```
-   - **預期結果**: 各個 API 呼叫返回成功訊息。
+   - **預期結果**：各個 API 呼叫返回成功訊息。
 
 2. **獲取最新數據**
    - **命令**:
      ```bash
      curl -X GET http://127.0.0.1:8000/api/latest_data
      ```
-   - **預期結果**: 返回包含最新數據的 JSON 物件，例如：
+   - **預期結果**：返回包含最新數據的 JSON 物件，例如：
      ```json
      {
-       "latest_data": {"s": 100, "v": 800, "t": [[100, 200], [300, 400]], "i": "192.168.1.200"},
+       "latest_data": {"s": 100, "v": 800, "t": [[100, 200], [300, 400]], "i": "192.168.1.200", "u": 50},
        "latest_command": {"c": 2, "m": 60, "d": 180, "a": 70},
        "esp32_cam_ip": "192.168.1.200",
        "current_control_mode": "autonomous",
@@ -143,8 +143,8 @@ PS C:\Windows\system32> Set-ExecutionPolicy RemoteSigned
 
 執行原則變更
 執行原則有助於防範您不信任的指令碼。如果變更執行原則，可能會使您接觸到 about_Execution_Policies 說明主題 (網址為
-https:/go.microsoft.com/fwlink/?LinkID=135170) 中所述的安全性風險。您要變更執行原則嗎?
-[Y] 是(Y)  [A] 全部皆是(A)  [N] 否(N)  [L] 全部皆否(L)  [S] 暫停(S)  [?] 說明 (預設值為 "N"): Y
+https://go.microsoft.com/fwlink/?LinkID=135170) 中所述的安全性風險。您要變更執行原則嗎?
+[Y] 是(Y)  [A] 全部皆是(A)  [N] 否(N)  [L] 全部皆不(L)  [S] 暫停(S)  [?] 說明 (預設值為 "N"): Y
 PS C:\Windows\system32>
 
 ```
@@ -166,7 +166,7 @@ Windows IP 設定
 ```
  - 切換到下載的mini-auto-main裡
 ```
-cd C:\Users\Hcedu\Documents\PAUL\mini-auto-main
+cd C:\Users\Hcedu\Documents\PAUL\mini-auto-main\
 ```
 - 安裝必要套件
 ```
@@ -201,10 +201,11 @@ C:\Users\Hcedu\Documents\PAUL\mini-auto-main\main.py:39: DeprecationWarning:
         [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
 
   @app.on_event("shutdown")
-[32mINFO[0m:     Started server process [[36m580[0m]
-[32mINFO[0m:     Waiting for application startup.
-[32mINFO[0m:     Application startup complete.
-[32mINFO[0m:     Uvicorn running on [1mhttp://0.0.0.0:8000[0m (Press CTRL+C to quit)
+
+INFO:     Started server process [580]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 - 允許防火牆
 - 開啟chrome測試Web server是否啟動
@@ -214,7 +215,6 @@ http://192.168.0.58:8000
 
 - 另開powershell, 執行測試程式
 ```
-PS C:\Users\Hcedu> cd C:\Users\Hcedu\Documents\PAUL\mini-auto-main\test\feature
 PS C:\Users\Hcedu\Documents\PAUL\mini-auto-main\test\feature> .\test_get_latest_data.ps1
 
 --- Setting up data for GET /api/latest_data ---
@@ -225,12 +225,10 @@ message : Manual control command received
 
 
 
-
 Setting control mode...
 
 
 message : Control mode set to autonomous
-
 
 
 
@@ -241,7 +239,6 @@ message : ESP32-S3 IP registered successfully
 
 
 
-
 Sending sync data...
 
 
@@ -249,7 +246,6 @@ c : 0
 m : 0
 d : 0
 a : 90
-
 
 
 
@@ -265,7 +261,5 @@ visual_analysis      :
 
 
 
-
 --- Test Complete ---
 PS C:\Users\Hcedu\Documents\PAUL\mini-auto-main\test\feature>
-```

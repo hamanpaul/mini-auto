@@ -4,9 +4,9 @@
 
 ### 1. 系統架構概覽
 
-*   **Arduino UNO**：車輛的控制核心，負責感測器數據採集（熱像儀、電壓）、致動器控制（馬達、舵機、LED、蜂鳴器），並透過 ESP-01S Wi-Fi 模組與後端通訊。
-*   **ESP32-CAM**：獨立的視覺模組，負責相機影像採集，並透過 Wi-Fi 提供 MJPEG 影像串流。同時作為 I2C 從機向 Arduino UNO 報告自身 IP。
-*   **Python FastAPI 後端**：系統的中央大腦，接收來自 Arduino 的車輛狀態，處理視覺和熱成像數據，根據控制模式生成控制指令，並提供 API 接口供使用者或外部系統互動。
+*   **Arduino UNO**：車輛的控制核心，負責感測器數據採集（熱像儀、電壓、超音波）、致動器控制（馬達、舵機、LED、蜂鳴器），並透過 I2C 與 ESP32-CAM 通訊。
+*   **ESP32-CAM**：獨立的視覺模組，負責相機影像採集，並透過 Wi-Fi 提供 MJPEG 影像串流。同時作為網路代理，處理與後端的所有 Wi-Fi 通訊（服務發現、數據同步、相機註冊），並作為 I2C 從機向 Arduino UNO 提供數據和接收命令。
+*   **Python FastAPI 後端**：系統的中央大腦，接收來自 ESP32 的車輛狀態，處理視覺和熱成像數據，根據控制模式生成控制指令，並提供 API 接口供使用者或外部系統互動。
 
 ### 2. 環境設定
 
@@ -14,8 +14,8 @@
 
 *   Arduino UNO 開發板
 *   ESP32-S3-WROOM 開發板（帶有 GC2145 相機模組）
-*   ESP-01S Wi-Fi 模組（連接至 Arduino UNO）
 *   AMG8833 熱像儀
+*   HC-SR04 超音波感測器
 *   馬達、舵機、RGB LED、蜂鳴器等車輛致動器
 *   必要的連接線和電源
 
@@ -52,9 +52,11 @@
     *   **SoftwareSerial**：Arduino 內建函式庫，無需額外安裝。
     *   **FastLED**：在函式庫管理員中搜尋並安裝 `FastLED`。
     *   **Servo**：Arduino 內建函式庫，無需額外安裝。
+    *   **Ultrasound**：在函式庫管理員中搜尋並安裝 `Ultrasound`。
     *   **WebServer** (ESP32)：ESP32 板支援包內建，無需額外安裝。
     *   **esp_camera** (ESP32)：ESP32 板支援包內建，無需額外安裝。
     *   **Wire**：Arduino 內建函式庫，無需額外安裝。
+    *   **AsyncUDP** (ESP32)：ESP32 板支援包內建，無需額外安裝。
 
 ### 3. 程式碼部署
 
@@ -101,9 +103,9 @@
 
 #### 4.1. 啟動順序
 
-1.  **啟動 ESP32-CAM**：確保 ESP32-CAM 已上電並連接到 Wi-Fi。它將啟動 MJPEG 串流伺服器並作為 I2C 從機等待 IP 查詢。
-2.  **啟動 Arduino UNO**：確保 Arduino UNO 已上電並連接到 Wi-Fi。它將嘗試透過 UDP 發現後端服務，並透過 I2C 獲取 ESP32-CAM 的 IP。
-3.  **啟動 Python FastAPI 後端**：運行 `python main.py`。後端啟動後，Arduino UNO 將開始向其同步數據，ESP32-CAM 的 IP 也會被註冊。
+1.  **啟動 ESP32-CAM**：確保 ESP32-CAM 已上電並連接到 Wi-Fi。它將啟動 MJPEG 串流伺服器，監聽後端 UDP 廣播，並作為 I2C 從機等待數據和命令。
+2.  **啟動 Python FastAPI 後端**：運行 `python main.py`。後端啟動後，會開始 UDP 廣播自己的 IP。ESP32-CAM 發現後端後，會自動註冊並開始定期同步數據。
+3.  **啟動 Arduino UNO**：確保 Arduino UNO 已上電。它將透過 I2C 向 ESP32-CAM 發送感測器數據並獲取控制命令。
 
 #### 4.2. 透過 API 互動
 
@@ -155,11 +157,10 @@
 *   **API 通訊問題**：
     *   檢查後端服務是否正在運行。
     *   檢查防火牆設定，確保埠 8000 未被阻擋。
-    *   確認 Arduino UNO 發現的伺服器 IP 是否正確。
+    *   確認 ESP32 發現的伺服器 IP 是否正確。
 
 ### 6. 進階配置
 
-*   **ESP32-CAM IP 地址**：在 `main.py` 中，`ESP32_CAM_IP` 變數在某些情況下可能需要手動設定，但通常會透過 Arduino UNO 的 I2C 註冊自動更新。
+*   **ESP32-CAM IP 地址**：在 `main.py` 中，`ESP32_CAM_IP` 變數在某些情況下可能需要手動設定，但通常會透過 ESP32 的自動註冊更新。
 *   **日誌限制**：`vehicle_api.py` 中的 `MAX_LOG_ENTRIES` 可以調整後端日誌緩衝區的大小。
 *   **相機 Pin 腳**：如果使用不同型號的 ESP32-CAM 或相機模組，可能需要修改 `esp32_cam.ino` 中的 `CAM_PIN_` 定義。
-

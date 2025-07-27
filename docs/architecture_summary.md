@@ -4,26 +4,26 @@
 
 ## 1. WiFi / API 伺服器架構
 
-本專案的 API 伺服器基於 **FastAPI** 框架，並採用了高度模組化的設計，以便於擴展和維護。Arduino 客戶端則負責與該伺服器進行網路通訊。
+本專案的 API 伺服器基於 **FastAPI** 框架，並採用了高度模組化的設計，以便於擴展和維護。ESP32 客戶端則負責與該伺服器進行網路通訊。
 
 ### 1.1 伺服器端 (Python FastAPI)
 
 *   **核心框架**：使用 `FastAPI`，一個現代、快速 (基於 Starlette 和 Pydantic) 的 Python Web 框架，用於建立 RESTful API。
-*   **動態模組載入**：`main.py` 是應用程式的入口點。它會自動掃描 `apis/` 目錄下的所有 Python 檔案 (除了 `__init__.py`)，並動態地匯入它們。每個 API 模組 (例如 `movement.py`, `example.py`, `status.py`) 都預期定義一個 `APIRouter` 實例。
+*   **動態模組載入**：`main.py` 是應用程式的入口點。它會自動掃描 `apis/` 目錄下的所有 Python 檔案 (除了 `__init__.py`)，並動態地匯入它們。每個 API 模組 (例如 `vehicle_api.py`, `camera.py`, `status.py`) 都預期定義一個 `APIRouter` 實例。
 *   **路由整合**：`main.py` 會將每個模組中定義的 `APIRouter` 實例包含到主 `FastAPI` 應用程式 `app` 中。這使得新增或修改 API 功能時，只需在 `apis/` 目錄中操作對應的檔案，無需修改 `main.py`。
 *   **HTTP 方法**：
-    *   **GET 請求**：主要用於從伺服器獲取資訊或指令，例如 `/forward`、`/backward` 等移動指令，以及 `/hello` 歡迎訊息。
-    *   **POST 請求**：用於向伺服器提交資料。例如，新增加的 `/status` 端點允許 Arduino 客戶端上傳車輛的狀態資訊 (如電量、當前狀態)。
-*   **資料驗證**：對於 POST 請求，FastAPI 利用 `Pydantic` 模型 (如 `VehicleStatus`) 自動對傳入的 JSON 資料進行驗證，確保資料格式的正確性。
+    *   **GET 請求**：主要用於從伺服器獲取資訊或指令，例如 `/api/latest_data`、`/api/logs` 等。
+    *   **POST 請求**：用於向伺服器提交資料。例如，`/api/sync` 端點允許 ESP32 上傳車輛的狀態資訊。
+*   **資料驗證**：對於 POST 請求，FastAPI 利用 `Pydantic` 模型 (如 `SyncRequest`) 自動對傳入的 JSON 資料進行驗證，確保資料格式的正確性。
 *   **伺服器運行**：使用 `uvicorn` 作為 ASGI 伺服器來運行 FastAPI 應用程式，預設監聽 `0.0.0.0:8000`，使其可在區域網路中被其他設備訪問。
 
-### 1.2 客戶端 (Arduino ESP32)
+### 1.2 客戶端 (ESP32)
 
-*   **網路連接**：Arduino (ESP32) 使用 `WiFi` 函式庫連接到指定的無線網路 (SSID 和密碼)。
+*   **網路連接**：ESP32 使用 `WiFi` 函式庫連接到指定的無線網路 (SSID 和密碼)。
 *   **HTTP 通訊**：使用 `HTTPClient` 函式庫來發送 HTTP 請求。
-    *   **發送狀態 (POST)**：`sendStatusUpdate` 函數會構建一個 JSON 格式的車輛狀態資料 (使用 `ArduinoJson` 函式庫)，並透過 HTTP POST 請求發送到伺服器的 `/status` 端點。
-    *   **獲取指令 (GET)**：`getMovementCommand` 函數會發送 HTTP GET 請求到伺服器的移動指令端點 (例如 `/forward`)，並解析返回的 JSON 響應以獲取指令。
-*   **JSON 處理**：使用 `ArduinoJson` 函式庫來序列化 (POST 請求) 和反序列化 (GET 響應) JSON 資料。
+    *   **發送狀態 (POST)**：`http_sync_callback` 函數會構建一個 JSON 格式的車輛狀態資料 (使用 `ArduinoJson` 函式庫)，並透過 HTTP POST 請求發送到伺服器的 `/api/sync` 端點。
+    *   **獲取指令 (GET)**：ESP32 在 `/api/sync` 的回應中直接獲取控制指令。
+*   **JSON 處理**：使用 `ArduinoJson` 函式庫來序列化 (POST 請求) 和反序列化 (回應) JSON 資料。
 
 ## 2. 鏡頭模組架構 (ESP32-S3-CAM / GC2415)
 

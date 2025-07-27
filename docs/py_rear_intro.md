@@ -22,32 +22,32 @@
     *   **障礙物檢測**：透過亮度閾值、高斯模糊、形態學操作和輪廓檢測等 OpenCV 技術，識別影像中的潛在障礙物，並計算其中心位置和佔比。
 *   **結果儲存**：處理後的影像幀 (可選) 和視覺分析結果會被儲存在 `CameraStreamProcessor` 內部，供其他組件查詢。
 
-### 2.2 Arduino UNO 與 FastAPI 的資料交換 (`POST /api/sync`)
+### 2.2 ESP32 與 FastAPI 的資料交換 (`POST /api/sync`)
 
-*   **Arduino 主動同步**：Arduino UNO 會定期 (例如每 100 毫秒) 向後端發送 `POST /api/sync` 請求。這個請求包含了 Arduino 當前的狀態數據，例如：
+*   **ESP32 主動同步**：ESP32 會定期 (例如每 100 毫秒) 向後端發送 `POST /api/sync` 請求。這個請求包含了 ESP32 當前的狀態數據，例如：
     *   `s` (status_byte): 車輛狀態字節。
     *   `v` (voltage_mv): 電池電壓。
     *   `t` (thermal_matrix): 紅外線熱成像數據 (8x8 矩陣)，如果熱成像模組可用。
     *   `u` (ultrasonic_distance_cm): 超音波感測器距離，如果超音波模組可用。
     *   `i` (esp32_ip): ESP32-S3 攝影機的 IP 地址 (用於動態註冊，如果尚未註冊)。
-*   **後端處理與指令生成**：FastAPI 的 `/api/sync` 端點接收到 Arduino 的數據後，會執行以下操作：
-    *   **儲存最新數據**：將接收到的 Arduino 數據儲存為 `latest_arduino_data`。
+*   **後端處理與指令生成**：FastAPI 的 `/api/sync` 端點接收到 ESP32 的數據後，會執行以下操作：
+    *   **儲存最新數據**：將接收到的 ESP32 數據儲存為 `latest_arduino_data`。
     *   **紅外線影像分析**：如果接收到熱成像數據 (`t`)，會呼叫 `_analyze_thermal_data` 函數進行分析 (例如計算最高溫、最低溫、平均溫、熱點檢測)。
     *   **指令生成**：根據當前系統的 `current_control_mode` (手動、避障、自主) 和最新的感測器數據 (包括 `CameraStreamProcessor` 提供的視覺分析結果和超音波數據)，生成新的控制指令 (馬達速度、方向、舵機角度、指令字節)。
         *   **手動模式**：直接使用 `POST /api/manual_control` 設定的預設值。
         *   **避障模式**：優先使用超音波數據進行避障判斷，若無超音波數據或距離安全，則使用視覺分析結果進行避障。
         *   **自主模式**：主要依賴視覺分析結果 (障礙物位置、大小) 進行路徑規劃和控制。
-    *   **回傳指令**：將生成的控制指令作為 `POST /api/sync` 請求的回應發送回 Arduino。Arduino 在其下一個控制週期中執行這些指令。
+    *   **回傳指令**：將生成的控制指令作為 `POST /api/sync` 請求的回應發送回 ESP32。ESP32 在其下一個控制週期中執行這些指令。
 
 ### 2.3 GUI (前端) 與後端的互動
 
 GUI (或其他外部監控工具) 主要透過以下 API 與後端互動：
 
 *   **控制指令 (`POST /api/manual_control`, `POST /api/set_control_mode`)**：GUI 可以發送請求來設定手動控制指令或切換車輛的控制模式。
-*   **獲取最新數據 (`GET /api/latest_data`)**：GUI 定期呼叫此 API 以獲取車輛的最新狀態 (包括 Arduino 數據、發送的指令、攝影機 IP、控制模式、熱成像分析和視覺分析結果)，用於顯示在儀表板上。
-*   **獲取影像 (`GET /api/camera/latest_frame`, `GET /api/camera/stream_mjpeg`)**：
-    *   `GET /api/camera/latest_frame`：用於獲取單張處理後的影像幀 (Base64 編碼)，適合靜態顯示或截圖。
-    *   `GET /api/camera/stream_mjpeg`：提供 MJPEG 串流，允許 GUI 直接顯示即時影像。
+*   **獲取最新數據 (`GET /api/latest_data`)**：GUI 定期呼叫此 API 以獲取車輛的最新狀態 (包括 ESP32 數據、發送的指令、攝影機 IP、控制模式、熱成像分析和視覺分析結果)，用於顯示在儀表板上。
+*   **獲取影像 (`GET /api/camera/analysis`, `GET /api/camera/stream`)**：
+    *   `GET /api/camera/analysis`：用於獲取最新的視覺分析結果。
+    *   `GET /api/camera/stream`：提供 MJPEG 串流，允許 GUI 直接顯示即時影像。
 *   **啟動/停止攝影機串流 (`POST /api/camera/start`, `POST /api/camera/stop`)**：GUI 可以手動控制攝影機串流的啟動和停止。
 *   **獲取日誌 (`GET /api/logs`)**：GUI 可以獲取後端運行日誌，用於調試和監控。
 
@@ -57,8 +57,7 @@ GUI (或其他外部監控工具) 主要透過以下 API 與後端互動：
 graph TD
     subgraph "外部環境 (External Environment)"
         GUI[使用者介面/外部控制]
-        Arduino[Arduino UNO]
-        ESP32_CAM[ESP32-S3 攝影機]
+        ESP32[ESP32 模組]
     end
 
     subgraph "Python FastAPI 後端 (Backend)"
@@ -75,8 +74,8 @@ graph TD
             CC_START["/api/camera/start (POST)"]
             CC_STOP["/api/camera/stop (POST)"]
             CC_STATUS["/api/camera/status (GET)"]
-            CC_FRAME["/api/camera/latest_frame (GET)"]
-            CC_STREAM["/api/camera/stream_mjpeg (GET)"]
+            CC_ANALYSIS["/api/camera/analysis (GET)"]
+            CC_STREAM["/api/camera/stream (GET)"]
         end
 
         subgraph "服務層 (Service Layer)"
@@ -93,9 +92,9 @@ graph TD
     %% 外部環境 -> API 端點
     GUI -->|"設定控制模式/手動指令"| F
     GUI -->|"獲取最新數據/影像/日誌"| F
-    Arduino -->|"定期 POST /api/sync (狀態, 電壓, 熱成像, 超音波)"| VC_SYNC
-    ESP32_CAM -->|"POST /api/register_camera (IP)"| CC_REG
-    ESP32_CAM -- "MJPEG 串流" --> CSP
+    ESP32 -->|"定期 POST /api/sync (狀態, 電壓, 熱成像, 超音波)"| VC_SYNC
+    ESP32 -->|"POST /api/register_camera (IP)"| CC_REG
+    ESP32 -- "MJPEG 串流" --> CSP
 
     %% API 端點 <--> 服務層 (數據流動)
     VC_SYNC -- "請求/轉發數據" --> ControlLogic
@@ -112,9 +111,8 @@ graph TD
     CC_START -- "啟動" --> CSP
     CC_STOP -- "停止" --> CSP
     CC_STATUS -- "查詢狀態" --> CSP
-    CC_FRAME -- "請求處理後影像" --> CSP
+    CC_ANALYSIS -- "請求分析結果" --> CSP
     CC_STREAM -- "請求即時串流" --> CSP
 
     %% 服務層內部溝通
     CSP -- "視覺分析結果" --> ControlLogic
-```

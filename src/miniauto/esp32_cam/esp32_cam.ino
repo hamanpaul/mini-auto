@@ -1,5 +1,5 @@
 #define HAS_UNO_I2C 0 // Define to enable UNO I2C communication and sensor data check
-#define USE_UDP_DISCOVERY 0 // Set to 1 to enable UDP discovery, 0 to use manual IP
+#define USE_UDP_DISCOVERY 1 // Set to 1 to enable UDP discovery, 0 to use manual IP
 
 // Manual Backend Server IP and Port (only used if USE_UDP_DISCOVERY is 0)
 const char* MANUAL_BACKEND_SERVER_IP = "192.168.0.100"; // <<< CHANGE THIS TO YOUR BACKEND SERVER IP
@@ -64,6 +64,10 @@ volatile bool newSensorDataAvailable = false; // 標誌，指示是否有新感�
 bool httpSyncTimerStarted = false; // 標誌，指示 HTTP 同步定時器是否已啟動
 bool cameraRegistered = false; // 標誌，指示攝影機是否已註冊
 
+// 全域變數，用於儲存上次發送的感測器數據，以及第一次同步的標誌
+SensorData_t lastSentSensorData;
+bool firstSync = true;
+
 // 後端伺服器 IP 和埠號
 String backendServerIp = "";
 int backendServerPort = 8000;
@@ -117,10 +121,24 @@ void requestEvent() {
 }
 
 void http_sync_callback(void* arg) {
-  #if HAS_UNO_I2C
+  // 複製當前感測器數據到臨時變數，避免直接操作 volatile packed 數據
+  SensorData_t currentSensorDataCopy;
+  memcpy(&currentSensorDataCopy, (const void*)&receivedSensorData, sizeof(SensorData_t));
+
+  // 檢查數據是否與上次發送的數據相同，如果相同且不是第一次同步，則跳過詳細日誌
+  if (!firstSync && memcmp(&currentSensorDataCopy, &lastSentSensorData, sizeof(SensorData_t)) == 0) {
+    Serial.print("^");
+ //   return;
+  }
+
+  // 更新 lastSentSensorData
+  memcpy(&lastSentSensorData, &currentSensorDataCopy, sizeof(SensorData_t));
+  firstSync = false;
+
+#if HAS_UNO_I2C
   // 檢查是否有新的感測器數據可用
   if (!newSensorDataAvailable) {
-    Serial.println("No new sensor data from UNO. Skipping HTTP sync.");
+    Serial.print("*");
     return;
   }
 
@@ -137,33 +155,48 @@ void http_sync_callback(void* arg) {
   HTTPClient http;
   String serverPath = "http://" + backendServerIp + ":" + String(backendServerPort) + "/api/sync";
 
+  Serial.print("Sending HTTP POST to: ");
+  Serial.println(serverPath);
+
   http.begin(serverPath);
   http.addHeader("Content-Type", "application/json");
 
   // 構建 JSON Payload
-  StaticJsonDocument<256> doc; // 根據 SensorData_t 的大小調整
+  StaticJsonDocument<512> doc; // 調整大小以容納二維熱像儀矩陣
+
+  // 將 volatile packed 數據複製到臨時變數
   uint8_t status_byte_temp = receivedSensorData.status_byte;
   uint16_t voltage_mv_temp = receivedSensorData.voltage_mv;
   int16_t ultrasonic_distance_cm_temp = receivedSensorData.ultrasonic_distance_cm;
   int16_t thermal_matrix_flat_temp[64];
   memcpy(thermal_matrix_flat_temp, (const void*)receivedSensorData.thermal_matrix_flat, sizeof(thermal_matrix_flat_temp));
 
-  doc["status_byte"] = status_byte_temp;
-  doc["voltage_mv"] = voltage_mv_temp;
-  doc["ultrasonic_distance_cm"] = ultrasonic_distance_cm_temp;
+  doc["s"] = status_byte_temp;
+  doc["v"] = voltage_mv_temp;
+  
+  if (ultrasonic_distance_cm_temp != -1) { // 只有當有效時才發送
+    doc["u"] = ultrasonic_distance_cm_temp;
+  }
 
-  JsonArray thermal_array = doc.createNestedArray("thermal_matrix_flat");
-  for (int i = 0; i < 64; i++) {
-    thermal_array.add(thermal_matrix_flat_temp[i]);
+  // 處理熱像儀矩陣 (8x8 二維陣列)
+  JsonArray thermal_matrix_json = doc.createNestedArray("t");
+  for (int r = 0; r < 8; r++) {
+    JsonArray row_array = thermal_matrix_json.createNestedArray();
+    for (int c = 0; c < 8; c++) {
+      row_array.add(thermal_matrix_flat_temp[r * 8 + c]);
+    }
   }
 
   String requestBody;
   serializeJson(doc, requestBody);
 
-  Serial.print("Sending HTTP POST to: ");
-  Serial.println(serverPath);
-  Serial.print("Request Body: ");
-  Serial.println(requestBody);
+  // 根據數據是否變化來決定是否列印詳細的 Request Body
+  if (!firstSync && memcmp(&currentSensorDataCopy, &lastSentSensorData, sizeof(SensorData_t)) == 0) {
+    Serial.println("Sensor data unchanged. Skipping detailed request body log.");
+  } else {
+    Serial.print("Request Body: ");
+    Serial.println(requestBody);
+  }
 
   int httpResponseCode = http.POST(requestBody);
 
@@ -177,10 +210,10 @@ void http_sync_callback(void* arg) {
     DeserializationError error = deserializeJson(response_doc, response);
 
     if (!error) {
-      currentCommandData.command_byte = response_doc["command_byte"] | 0;
-      currentCommandData.motor_speed = response_doc["motor_speed"] | 0;
-      currentCommandData.direction_angle = response_doc["direction_angle"] | 0;
-      currentCommandData.servo_angle = response_doc["servo_angle"] | 0;
+      currentCommandData.command_byte = response_doc["c"] | 0;
+      currentCommandData.motor_speed = response_doc["m"] | 0;
+      currentCommandData.direction_angle = response_doc["d"] | 0;
+      currentCommandData.servo_angle = response_doc["a"] | 0;
       Serial.println("Updated command data from backend.");
     } else {
       Serial.print("Failed to parse JSON response: ");
@@ -292,8 +325,7 @@ void registerCamera() {
   http.addHeader("Content-Type", "application/json");
 
   StaticJsonDocument<256> doc; // Adjust size as needed for registration payload
-  doc["esp32_ip"] = WiFi.localIP().toString();
-  doc["esp32_mac"] = WiFi.macAddress();
+  doc["i"] = WiFi.localIP().toString(); // 將鍵名改為 'i'
 
   String requestBody;
   serializeJson(doc, requestBody);
@@ -442,4 +474,13 @@ void loop() {
   server.handleClient();
   // esp_timer 會在背景運行，不需要在 loop 中額外呼叫
   // AsyncUDP 也在背景運行，不需要在 loop 中額外呼叫
+
+  // Check for serial input to confirm ESP32 is alive
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // Remove any whitespace
+    if (command.length() > 0) {
+      Serial.println("ESP32 is alive!");
+    }
+  }
 }

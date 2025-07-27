@@ -29,7 +29,7 @@ Miniauto 的 GUI 系統遵循一個「**前端發送控制、後端中繼指令�
 -   **狀態追蹤**: 一個名為 `activeKeys` 的物件被用來追蹤當前有哪些按鍵正被按住。
 -   **指令生成**: `updateMotorControl` 函式會檢查 `activeKeys` 的狀態，並根據被按下的方向鍵（`w`, `a`, `s`, `d`）來設定馬達速度 (`motorSpeed`) 和方向角度 (`directionAngle`)。
 -   **API 呼叫 (控制)**: 只有當控制狀態（速度或方向）發生改變時，`sendManualControl` 函式才會被觸發。它使用 `fetch` API 向後端的 `/api/manual_control` 端點發送一個 `POST` 請求，請求的 body 中包含了 JSON 格式的控制指令。
--   **影像串流顯示**: 前端透過 `<img>` 標籤的 `src` 屬性連接到後端的 `/api/camera/stream` 端點。這意味著影像資料流會經過 Python 後端進行處理和轉發。
+-   **影像串流顯示**: 前端透過 `<img>` 標籤的 `src` 屬性連接到後端的 `/api/camera/stream` 端點。這意味著影像資料流會經過 Python 後端進行處理和轉發。前端會自動在後端偵測到 ESP32 IP 後啟動串流。
 -   **影像分析結果獲取**: 前端會定期向後端的 `/api/camera/analysis` 端點發送請求，獲取最新的影像分析結果（例如障礙物檢測狀態、位置等），並可以在介面上進行顯示或處理。
 
 ```javascript
@@ -38,17 +38,20 @@ Miniauto 的 GUI 系統遵循一個「**前端發送控制、後端中繼指令�
 // ...
 methods: {
     handleKeyDown(event) {
+        // ... (省略日誌) ...
         if (event.repeat) return; // Ignore key repeat
         const key = event.key.toLowerCase(); // 使用小寫鍵名
         this.activeKeys[key] = true;
         this.updateMotorControl();
     },
     handleKeyUp(event) {
+        // ... (省略日誌) ...
         const key = event.key.toLowerCase();
         this.activeKeys[key] = false;
         this.updateMotorControl();
     },
     updateMotorControl() {
+        // ... (省略日誌) ...
         let newMotorSpeed = 0;
         let newDirectionAngle = 0;
 
@@ -76,12 +79,23 @@ methods: {
     async sendManualControl() {
         // ... 向 /api/manual_control 發送 POST 請求 ...
     },
-    toggleStream() {
+    async toggleStream() {
         // 控制影像串流的啟動/停止，直接修改 img 標籤的 src
         if (this.streamUrl) {
+            // 如果串流正在運行，停止它
+            await fetch('/camera/stop', { method: 'POST' });
             this.streamUrl = ''; // 停止串流
+            this.streamButtonText = 'Start Stream';
         } else {
-            this.streamUrl = `/api/camera/stream`; // 啟動串流，指向後端代理
+            // 如果串流已停止，啟動它
+            const response = await fetch('/camera/start', { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                this.streamUrl = '/camera/stream'; // 啟動串流，指向後端代理
+                this.streamButtonText = 'Stop Stream';
+            } else {
+                throw new Error(data.detail || 'Failed to start stream');
+            }
         }
     },
     async fetchAnalysisResults() {
@@ -89,6 +103,13 @@ methods: {
         const response = await fetch('/api/camera/analysis');
         const data = await response.json();
         // ... 處理並顯示分析結果 ...
+    },
+    async fetchData() {
+        // ... (省略其他邏輯) ...
+        if (data.esp32_cam_ip && !this.streamUrl) {
+            // 如果從後端獲取到 ESP32 IP 且串流尚未啟動，則自動啟動串流
+            await this.toggleStream();
+        }
     }
 }
 // ...

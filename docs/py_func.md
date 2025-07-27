@@ -6,7 +6,7 @@
 
 | 模組 | 功能名稱 | 類型 | 描述 |
 |---|---|---|---|
-| `vehicle_api.py` | `sync_data` | API 端點 (POST) | 接收 Arduino UNO 的車輛狀態數據 (狀態字節、電壓、熱成像、超音波)，並根據當前控制模式 (手動、避障、自主) 計算並回傳控制指令 (馬達速度、方向、舵機角度、指令字節)。同時更新後端儲存的最新數據。 |
+| `vehicle_api.py` | `sync_data` | API 端點 (POST) | 接收 ESP32 的車輛狀態數據 (狀態字節、電壓、熱成像、超音波)，並根據當前控制模式 (手動、避障、自主) 計算並回傳控制指令 (馬達速度、方向、舵機角度、指令字節)。同時更新後端儲存的最新數據。 |
 | `vehicle_api.py` | `manual_control` | API 端點 (POST) | 接收來自外部介面的手動控制指令 (馬達速度、方向、舵機角度、指令字節)，並更新後端儲存的手動控制參數。這些參數將在 `sync_data` 呼叫時被使用。 |
 | `vehicle_api.py` | `set_control_mode` | API 端點 (POST) | 接收來自外部介面的控制模式切換請求 (手動、避障、自主)，並更新系統的當前控制模式。 |
 | `vehicle_api.py` | `register_camera` | API 端點 (POST) | 接收 ESP32-S3 視覺模組的 IP 地址註冊請求。註冊成功後，會更新 `CameraStreamProcessor` 的串流來源並嘗試啟動串流。 |
@@ -35,8 +35,8 @@
 
 ```mermaid
 graph LR
-    %% 區塊一：Arduino UNO
-    subgraph A1 [Arduino UNO]
+    %% 區塊一：ESP32
+    subgraph A1 [ESP32]
         A1_1[啟動]
         A1_2[定期發送 POST /api/sync]
         A1_3[接收控制指令]
@@ -52,7 +52,7 @@ graph LR
         B1_3b[避障模式]
         B1_3c[自主模式]
         B1_4[生成控制指令]
-        B1_5[回傳給 Arduino]
+        B1_5[回傳給 ESP32]
         B1_1 --> B1_2
         B1_2 --> B1_3a --> B1_4
         B1_2 --> B1_3b --> B1_4
@@ -83,8 +83,8 @@ graph LR
         C1_3[POST /camera/start]
         C1_4[POST /camera/stop]
         C1_5[GET /camera/status]
-        C1_6[GET /latest_frame]
-        C1_7[GET /stream_mjpeg]
+        C1_6[GET /camera/analysis]
+        C1_7[GET /camera/stream]
         C1_1 --> C1_2
         C1_3 --> C1_2
         C1_4 --> C1_2
@@ -108,5 +108,3 @@ graph LR
 
     D1_2 --> B1_3b
     D1_2 --> B1_3c
-
-```

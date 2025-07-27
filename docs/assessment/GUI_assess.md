@@ -9,13 +9,13 @@
 2.  **根路徑 HTML 服務**：
     *   根路徑 `/` (`@app.get("/", response_class=HTMLResponse)`) 會讀取並返回 `templates/index.html` 的內容。這表示後端提供了一個入口點，用於載入前端的 HTML 頁面。
 3.  **API 接口提供**：
-    *   後端提供了豐富的 RESTful API 端點（如 `/api/sync`, `/api/manual_control`, `/api/latest_data`, `/camera/latest_frame` 等）。這些 API 是前端 GUI 獲取數據、發送指令和控制車輛的基礎。
+    *   後端提供了豐富的 RESTful API 端點（如 `/api/sync`, `/api/manual_control`, `/api/latest_data`, `/camera/stream` 等）。這些 API 是前端 GUI 獲取數據、發送指令和控制車輛的基礎。
 
 ### 未實現部分（或由前端負責的部分）：
 
 1.  **GUI 渲染邏輯**：後端程式碼中沒有任何用於直接渲染使用者介面元素（如按鈕、滑塊、影像顯示區）的邏輯。這些渲染工作完全由 `index.html` 及其引用的前端技術（如 HTML, CSS, JavaScript, 或任何前端框架）負責。
 2.  **使用者互動處理**：後端不直接處理使用者在 GUI 上的點擊、拖曳等互動事件。這些事件會由前端 JavaScript 捕獲，然後轉換為對後端 API 的請求。
-3.  **實時數據更新**：雖然後端提供了 `/api/latest_data` 和 `/camera/latest_frame` 等 API，但如何將這些數據實時地顯示在 GUI 上（例如，透過 WebSocket 或定時輪詢）是前端的職責。
+3.  **實時數據更新**：雖然後端提供了 `/api/latest_data` 和 `/camera/stream` 等 API，但如何將這些數據實時地顯示在 GUI 上（例如，透過 WebSocket 或定時輪詢）是前端的職責。
 4.  **複雜視覺化**：後端不負責生成圖表、儀表板或其他複雜的數據視覺化。
 
 ### 總結：

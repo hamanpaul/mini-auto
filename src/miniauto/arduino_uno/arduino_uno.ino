@@ -21,6 +21,7 @@
 #include <Ultrasound.h> // 引入 Ultrasound 函式庫，用於超音波感測器。
 
 // --- 常數定義 ---
+#define SERIAL_TEST_MODE 1 // 設定為 1 啟用 Serial 測試模式，0 禁用
 
 // --- I2C 從機位址 ---
 #define ESP32_I2C_SLAVE_ADDRESS 0x53 // 定義 ESP32 模組的 I2C 從機位址。
@@ -106,6 +107,7 @@ uint8_t getErrorCode(); // 獲取錯誤代碼函數。
 uint8_t getLedStatusCode(uint8_t current_error_code, bool is_busy); // 獲取 LED 狀態代碼函數。
 void syncWithServer(); // 與伺服器同步函數。
 void Rgb_Show(uint8_t rValue, uint8_t gValue, uint8_t bValue); // 顯示 RGB 顏色函數。
+void handleSerialCommand(); // 處理序列埠命令函數。
 
 // --- 設定 (Setup) ---
 void setup() {
@@ -141,6 +143,10 @@ void setup() {
 // --- 主迴圈 (Main Loop) ---
 void loop() {
   unsigned long currentTime = millis(); // 獲取當前時間（毫秒）。
+
+#if SERIAL_TEST_MODE
+  handleSerialCommand(); // 處理序列埠命令 (測試模式)
+#endif
 
   if (currentTime - lastCommandPollTime >= commandPollInterval) { // 如果距離上次命令輪詢時間超過設定間隔。
     syncWithServer(); // 與伺服器同步資料。
@@ -373,6 +379,46 @@ void PWM_Out(uint8_t PWM_Pin, int8_t DutyCycle) { // PWM 輸出函數。
   }
   if (currentTime_us - previousTime_us >= (unsigned long)period) { // 如果當前時間減去上次時間大於等於 PWM 週期。
     previousTime_us = currentTime_us; // 更新上次時間。
+  }
+}
+
+// --- 序列埠命令處理函數 (僅用於測試) ---
+void handleSerialCommand() {
+  if (Serial.available()) {
+    String commandString = Serial.readStringUntil('\n');
+    commandString.trim();
+    Serial.print(F("Received serial command: "));
+    Serial.println(commandString);
+
+    // 解析命令格式: c,m,d,a (command_byte, motor_speed, direction_angle, servo_angle)
+    int firstComma = commandString.indexOf(',');
+    int secondComma = commandString.indexOf(',', firstComma + 1);
+    int thirdComma = commandString.indexOf(',', secondComma + 1);
+
+    if (firstComma != -1 && secondComma != -1 && thirdComma != -1) {
+      receivedCommand.command_byte = commandString.substring(0, firstComma).toInt();
+      receivedCommand.motor_speed = commandString.substring(firstComma + 1, secondComma).toInt();
+      receivedCommand.direction_angle = commandString.substring(secondComma + 1, thirdComma).toInt();
+      receivedCommand.servo_angle = commandString.substring(thirdComma + 1).toInt();
+
+      Serial.print(F("Parsed command: c=")); Serial.print(receivedCommand.command_byte);
+      Serial.print(F(", m=")); Serial.print(receivedCommand.motor_speed);
+      Serial.print(F(", d=")); Serial.print(receivedCommand.direction_angle);
+      Serial.print(F(", a=")); Serial.println(receivedCommand.servo_angle);
+
+      // 執行指令 (與 I2C 接收到的指令處理邏輯相同)
+      controlBuzzer(receivedCommand.command_byte & 0b11);
+      Velocity_Controller(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+      myservo.write(receivedCommand.servo_angle);
+
+      uint8_t error_code = getErrorCode(); // 獲取當前錯誤代碼
+      uint8_t override_led_code = (receivedCommand.command_byte >> 2) & 0b11;
+      uint8_t final_led_code = override_led_code != 0 ? override_led_code : getLedStatusCode(error_code, false);
+      setLedStatus(final_led_code);
+
+    } else {
+      Serial.println(F("Invalid serial command format. Expected c,m,d,a"));
+    }
   }
 }
 

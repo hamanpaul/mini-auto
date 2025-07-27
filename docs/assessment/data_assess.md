@@ -5,8 +5,8 @@
 ### 已實現部分：
 
 1.  **即時數據儲存 (記憶體中)**：
-    *   **最新 Arduino 數據** (`latest_arduino_data`)：透過 `/api/sync` 端點接收到的最新車輛狀態數據（包括狀態字節 `s`、電壓 `v`、熱成像數據 `t`、ESP32 IP `i`、超音波距離 `u`）會儲存在一個全域字典中。
-    *   **最新發送指令** (`latest_command_sent`)：後端生成並發送給 Arduino 的最新控制指令也會儲存在一個全域字典中。
+    *   **最新 ESP32 數據** (`latest_arduino_data`)：透過 `/api/sync` 端點接收到的最新車輛狀態數據（包括狀態字節 `s`、電壓 `v`、熱成像數據 `t`、ESP32 IP `i`、超音波距離 `u`）會儲存在一個全域字典中。
+    *   **最新發送指令** (`latest_command_sent`)：後端生成並發送給 ESP32 的最新控制指令也會儲存在一個全域字典中。
     *   **ESP32-CAM IP 地址** (`latest_esp32_cam_ip`)：透過 `/api/register_camera` 註冊的 ESP32-CAM IP 地址儲存在一個全域字串變數中。
     *   **控制模式** (`current_control_mode`)：當前車輛的控制模式（手動、避障、自主）儲存在一個全域枚舉變數中。
     *   **手動控制指令** (`current_manual_motor_speed`, `current_manual_direction_angle`, `current_manual_servo_angle`, `current_manual_command_byte`)：手動模式下的控制指令儲存在各自的全域變數中。

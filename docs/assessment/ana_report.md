@@ -48,10 +48,15 @@
     *   初始化 I2C 從機。
     *   透過 I2C 向主機（Arduino UNO）提供自身的 IP 位址 (`sendIpAddress`)。
 *   **影像串流**：`handle_stream` 函式負責處理 MJPEG 影像串流的 HTTP 請求和回應。
+*   **後端通訊**：
+    *   **UDP 服務發現**：監聽後端伺服器的 UDP 廣播，發現後端 IP。
+    *   **自動註冊**：在發現後端 IP 後，自動向後端 `/api/register_camera` 註冊自身 IP。
+    *   **定期同步**：透過 `http_sync_callback` 定期向後端 `/api/sync` 發送感測器數據（從 UNO 接收）並獲取控制命令。
+    *   **日誌優化**：在數據未變化時，減少詳細日誌輸出。
 
 **完整性/潛在問題評估：**
 
-*   **核心功能**：相機初始化、Wi-Fi 上的 MJPEG 串流以及 I2C IP 位址報告功能都已實現。
+*   **核心功能**：相機初始化、Wi-Fi 上的 MJPEG 串流、I2C IP 位址報告、以及與後端的雙向同步功能都已實現。
 *   **Arduino 相容性**：程式碼已成功從混合 ESP-IDF/Arduino 風格遷移到純 Arduino-ESP32 風格。`Wire.write()` 的修正確保了穩健的 I2C 通訊。
 *   **串流邏輯**：串流邏輯對於基本的 Web 伺服器來說是健全的。
 *   **錯誤處理**：`setup_camera` 中的 `ESP.restart()` 是一個硬重啟，對於某些生產環境可能需要更精細的錯誤恢復機制。
