@@ -48,42 +48,52 @@ Miniauto 的 API 呼叫流程設計為一種基於請求-回應的同步機制�
 
 ```mermaid
 flowchart TD
-    %% ESP32 通訊流程
-    subgraph ESP32_Client ["ESP32 (客戶端)"]
-        E1["讀取當前狀態 State_A"]
-        E2["執行上一個指令 Command_Prev"]
-        E3["POST /api/sync 傳送狀態"]
-        E4["接收伺服器指令 Command_B"]
-        E5["下一週期開始，執行 Command_B"]
+    %% ESP32 控制週期 - 第一輪
+    subgraph ESP32_Client_1 ["ESP32 (客戶端) - 控制週期 T0"]
+        E1["[T0] 讀取狀態 State_A"]
+        E2["[T0] 執行上一輪指令 Command_Prev"]
+        E3["[T0+Δt1] POST /api/sync 傳送 State_A"]
     end
 
-    %% FastAPI 通訊流程
+    %% FastAPI 處理邏輯
     subgraph FastAPI_Server ["FastAPI Server"]
-        S0["UDP 廣播 IP"]
-        S1["接收 State_A"]
-        S2["依據模式與狀態分析"]
-        S3["生成 Command_B"]
-        S4["回傳 Command_B"]
+        S0["[初始化] UDP 廣播 IP"]
+        S1["[T0+Δt2] 接收 State_A"]
+        S2["分析控制模式與手動指令"]
+        S3["[T0+Δt2] 根據 State_A 計算 Command_B"]
+        S4["[T0+Δt2] 回傳 Command_B 給 ESP32"]
+    end
+
+    %% ESP32 控制週期 - 第二輪
+    subgraph ESP32_Client_2 ["ESP32 (客戶端) - 控制週期 T1"]
+        E4["[T0+Δt3] 接收伺服器指令 Command_B"]
+        E5["[T1] 讀取狀態 State_B"]
+        E6["[T1] 執行 Command_B"]
+        E7["[T1+Δt1] POST /api/sync 傳送 State_B"]
     end
 
     %% 外部控制介面
-    subgraph External_Interface ["外部控制介面 (如 GUI)"]
-        G1["POST /api/manual_control 設定手動指令"]
-        G2["POST /api/set_control_mode 切換控制模式"]
-        G3["GET /api/latest_data 查詢車輛狀態"]
+    subgraph External_Interface ["外部控制介面 (GUI/Web)"]
+        G1["POST /api/manual_control\n設定手動指令"]
+        G2["POST /api/set_control_mode\n切換控制模式"]
+        G3["GET /api/latest_data\n查詢最新狀態"]
     end
 
-    %% 擴充功能
-    subgraph IP_Registration ["攝影機 IP 註冊"]
+    %% 攝影機 IP 註冊
+    subgraph Camera_Registration ["ESP32 註冊攝影機 IP"]
         R1["POST /api/register_camera"]
     end
 
-    %% 時間流程與箭頭
+    %% 控制流程與因果箭頭
     S0 --> E1
     E1 --> E2 --> E3 --> S1
-    S1 --> S2 --> S3 --> S4 --> E4 --> E5
+    S1 --> S2 --> S3 --> S4 --> E4
+    E4 --> E5 --> E6 --> E7 --> S1
+
+    %% 外部操作影響控制決策
     G1 --> S2
     G2 --> S2
     G3 --> S1
     R1 --> S1
+
 ```
