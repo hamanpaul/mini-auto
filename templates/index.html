@@ -239,18 +239,35 @@
                 streamButtonText: 'Start Stream' // Text for the stream button
             },
             methods: {
-                toggleStream() {
+                async toggleStream() {
                     this.addLog(`Toggle Stream button clicked. Current URL: '${this.streamUrl}'`, 'gui', 'debug');
                     if (this.streamUrl) {
                         // If stream is running, stop it
-                        this.streamUrl = '';
-                        this.streamButtonText = 'Start Stream';
-                        this.addLog('Stream stopped.', 'gui', 'info');
+                        try {
+                            this.addLog('Stopping camera stream via backend...', 'gui', 'info');
+                            await fetch('/camera/stop', { method: 'POST' });
+                            this.streamUrl = '';
+                            this.streamButtonText = 'Start Stream';
+                            this.addLog('Stream stopped successfully.', 'gui', 'info');
+                        } catch (error) {
+                            this.addLog(`Error stopping stream: ${error.message}`, 'gui', 'error');
+                        }
                     } else {
                         // If stream is stopped, start it
-                        this.streamUrl = `http://${this.esp32CamIp}/stream`;
-                        this.streamButtonText = 'Stop Stream';
-                        this.addLog(`Starting stream from ${this.streamUrl}`, 'gui', 'info');
+                        try {
+                            this.addLog('Starting camera stream via backend...', 'gui', 'info');
+                            const response = await fetch('/camera/start', { method: 'POST' });
+                            const data = await response.json();
+                            if (response.ok) {
+                                this.streamUrl = '/camera/stream'; // Point to the backend proxy
+                                this.streamButtonText = 'Stop Stream';
+                                this.addLog(`Stream started. Pointing to: ${this.streamUrl}`, 'gui', 'info');
+                            } else {
+                                throw new Error(data.detail || 'Failed to start stream');
+                            }
+                        } catch (error) {
+                            this.addLog(`Error starting stream: ${error.message}`, 'gui', 'error');
+                        }
                     }
                 },
                 addLog(message, source = 'gui', level = 'info') {

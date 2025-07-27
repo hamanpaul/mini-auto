@@ -25,7 +25,7 @@ class CameraStreamProcessor:
             return
 
         self.esp32_cam_ip = esp32_cam_ip # 更新 ESP32-CAM 的 IP 位址。
-        # 根據 IP 位址構建影像串流的 URL。通常 ESP32-CAM 的串流埠是 81。
+        # 根據 IP 位址構建影像串流的 URL。
         self.stream_url = f"http://{self.esp32_cam_ip}/stream"
         print(f"相機串流來源已更新為: {self.stream_url}")
 
@@ -60,19 +60,20 @@ class CameraStreamProcessor:
             while self._running: # 迴圈運行，直到 _running 標誌變為 False。
                 ret, frame = cap.read() # 從串流中讀取一幀影像。
                 if not ret: # 如果無法讀取幀（串流結束或失敗）。
-                    print("串流結束或無法擷取幀。")
+                    print(f"警告: 無法從串流中讀取幀。嘗試重新連接到 {self.stream_url}")
                     time.sleep(1) # 等待一小段時間，然後嘗試重新連接。
                     cap.release() # 釋放當前的視訊捕捉物件。
                     cap = cv2.VideoCapture(self.stream_url) # 重新創建視訊捕捉物件。
                     if not cap.isOpened(): # 如果重新連接失敗，則停止。
-                        print("無法重新連接到串流。正在停止。")
+                        print(f"錯誤: 無法重新連接到串流 {self.stream_url}。正在停止。")
+                        self._running = False # 確保停止運行
                         break
                     continue
 
                 # 將影像幀編碼為 JPEG 位元組，用於儲存和潛在的代理。
                 ret, buffer = cv2.imencode('.jpg', frame) # 將幀編碼為 JPEG 格式。
                 if not ret: # 如果編碼失敗。
-                    print("無法將幀編碼為 JPEG。")
+                    print("警告: 無法將幀編碼為 JPEG。跳過此幀。")
                     continue
                 
                 frame_bytes = buffer.tobytes() # 將緩衝區轉換為位元組。

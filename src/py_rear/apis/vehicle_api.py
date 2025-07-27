@@ -151,16 +151,14 @@ async def register_camera(request_data: RegisterCameraRequest, request: Request)
     add_backend_log(f"已註冊 ESP32-S3 IP: {latest_esp32_cam_ip}") # 添加日誌訊息。
     add_backend_log(f"----------------------------------------") # 添加日誌訊息。
     
-    broadcast_process = request.app.state.broadcast_process
-    if broadcast_process:
+    if hasattr(request.app.state, 'broadcast_process') and request.app.state.broadcast_process:
         print("從 API 請求停止 IP 廣播腳本...")
-        broadcast_process.terminate()
+        request.app.state.broadcast_process.terminate()
         request.app.state.broadcast_process = None # 清除進程引用。
         print("廣播腳本已停止。")
 
     if apis_camera.camera_processor: # 如果 camera_processor 已經初始化。
         apis_camera.camera_processor.update_stream_source(latest_esp32_cam_ip) # 更新影像串流來源。
-        apis_camera.camera_processor.start() # 啟動影像串流處理器。
     else:
         add_backend_log("警告: apis_camera.camera_processor 未初始化。無法啟動串流。", level="WARNING") # 添加警告日誌。
 

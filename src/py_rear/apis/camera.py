@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse # 導入 StreamingResponse，用
 import io # 導入 io 模組，用於處理位元組串流。
 import cv2 # 導入 OpenCV 函式庫，用於影像處理。
 import base64 # 導入 base64 模組，用於編碼和解碼資料。
+import asyncio # 導入 asyncio 模組，用於非同步操作。
 
 # camera_processor 變數將在 main.py 啟動時被設定為 CameraStreamProcessor 的實例。
 camera_processor = None
@@ -76,7 +77,7 @@ async def video_feed():
         raise HTTPException(status_code=404, detail="Camera stream not running.")
 
     async def generate_mjpeg_frames():
-        while True:
+        while camera_processor.is_running():
             frame_bytes, _, _ = camera_processor.get_latest_frame()
             if frame_bytes:
                 yield (b'--frame\r\n'
