@@ -11,6 +11,7 @@ import importlib # 導入 importlib 模組，用於動態導入其他 Python 模
 import asyncio # 導入 asyncio 模組，用於非同步編程。
 import sys # 導入 sys 模組，提供對 Python 解釋器相關變數和函數的訪問。
 import subprocess # 導入 subprocess 模組，用於創建和管理子進程。
+import logging # 導入 logging 模組，用於日誌記錄。
 
 # 導入 CameraStreamProcessor 類，它負責處理來自 ESP32-CAM 的影像串流。
 from src.py_rear.services.camera_stream_processor import CameraStreamProcessor
@@ -104,4 +105,8 @@ if __name__ == "__main__":
     # 使用 uvicorn 運行 FastAPI 應用程式。
     # host="0.0.0.0" 表示伺服器將監聽所有可用的網路介面，允許從外部訪問。
     # port=8000 表示伺服器將在 8000 埠上運行。
+
+    # 配置日誌格式，包含時間戳
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
