@@ -22,12 +22,13 @@ def broadcast_ip(port=5005, interval=1):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     
+    print(f"Local IP detected: {server_ip}")
     print(f"Starting broadcast of '{message}' to port {port} every {interval} second(s).")
     print("Press Ctrl+C to stop.")
 
     try:
         while True:
-            sock.sendto(message.encode('utf-8'), ('<broadcast>', port))
+            sock.sendto(message.encode('utf-8'), ('255.255.255.255', port))
             print(f"Sent: {message}")
             time.sleep(interval)
     except KeyboardInterrupt:

@@ -1,19 +1,30 @@
-/*
-  ESP32-S3-WROOM Camera Web Server for Miniauto
+#define HAS_UNO_I2C 0 // Define to enable UNO I2C communication and sensor data check
+#define USE_UDP_DISCOVERY 0 // Set to 1 to enable UDP discovery, 0 to use manual IP
 
-  This sketch provides an MJPEG video stream from a GC2145 camera on an ESP32-S3 module.
-  It is designed to work within the Arduino framework and acts as an I2C slave to provide
-  its IP address to the main Arduino UNO controller.
+// Manual Backend Server IP and Port (only used if USE_UDP_DISCOVERY is 0)
+const char* MANUAL_BACKEND_SERVER_IP = "192.168.0.100"; // <<< CHANGE THIS TO YOUR BACKEND SERVER IP
+const int MANUAL_BACKEND_SERVER_PORT = 8000; // <<< CHANGE THIS TO YOUR BACKEND SERVER PORT
+
+/*
+  ESP32-S3-WROOM Camera Web Server and Autonomous Sync Agent for Miniauto
+
+  This sketch runs on the ESP32-S3 module, providing an MJPEG video stream from a GC2145 camera.
+  It acts as an I2C slave to communicate with the Arduino UNO, receiving sensor data and sending control commands.
+  Additionally, it functions as an autonomous sync agent, managing independent HTTP communication with the backend server.
 
   - Based on official Espressif esp32-camera examples.
   - Uses Arduino WebServer library for the MJPEG stream.
-  - Provides IP address over I2C.
+  - Implements I2C slave for communication with Arduino UNO.
+  - Manages independent HTTP synchronization with the backend server.
 */
 
 #include "esp_camera.h"
 #include "WiFi.h"
 #include "WebServer.h"
 #include "Wire.h"
+#include <HTTPClient.h> // 用於發送 HTTP 請求到後端伺服器
+#include <ArduinoJson.h> // 用於處理 JSON 數據
+#include <AsyncUDP.h> // 用於監聽 UDP 廣播，發現後端伺服器 IP
 
 // --- WiFi Configuration ---
 const char* ssid = "Hcedu01";
@@ -23,6 +34,47 @@ const char* password = "035260089";
 #define I2C_SLAVE_ADDRESS 0x53
 #define I2C_SDA_PIN 21
 #define I2C_SCL_PIN 22
+
+// --- I2C 數據結構定義 (與 UNO 保持一致) ---
+// 定義 UNO 感測器數據的結構體
+typedef struct __attribute__((packed)) {
+  uint8_t status_byte;      // 狀態位元組 (s)
+  uint16_t voltage_mv;      // 電壓 (v)，單位毫伏
+  int16_t ultrasonic_distance_cm; // 超音波距離 (u)，單位厘米，-1 表示無效
+  // 熱像儀數據 (t) - 8x8 矩陣，每個像素 2 位元組 (int16_t)
+  int16_t thermal_matrix_flat[64]; 
+} SensorData_t;
+
+// 定義後端控制指令的結構體
+typedef struct __attribute__((packed)) {
+  uint8_t command_byte;     // 命令位元組 (c)
+  int16_t motor_speed;      // 馬達速度 (m)
+  int16_t direction_angle;  // 方向角度 (d)
+  int16_t servo_angle;      // 舵機角度 (a)
+} CommandData_t;
+
+// 計算結構體大小
+const size_t SENSOR_DATA_SIZE = sizeof(SensorData_t);
+const size_t COMMAND_DATA_SIZE = sizeof(CommandData_t);
+
+// --- 全域變數 ---
+volatile SensorData_t receivedSensorData; // 用於儲存從 UNO 接收的感測器數據
+volatile CommandData_t currentCommandData; // 用於儲存要發送給 UNO 的控制指令
+volatile bool newSensorDataAvailable = false; // 標誌，指示是否有新感測器數據從 UNO 傳來
+bool httpSyncTimerStarted = false; // 標誌，指示 HTTP 同步定時器是否已啟動
+bool cameraRegistered = false; // 標誌，指示攝影機是否已註冊
+
+// 後端伺服器 IP 和埠號
+String backendServerIp = "";
+int backendServerPort = 8000;
+
+// UDP 廣播相關
+AsyncUDP udp; // UDP 物件
+const int UDP_BROADCAST_PORT = 5005; // 監聽 UDP 廣播的埠號
+
+// HTTP 同步定時器相關
+esp_timer_handle_t http_sync_timer; // 定時器句柄
+const int HTTP_SYNC_INTERVAL_MS = 200; // HTTP 同步間隔，單位毫秒
 
 // --- Pin Definitions for ESP32-S3-WROOM (matches official example) ---
 #define CAM_PIN_PWDN 38
@@ -44,7 +96,102 @@ const char* password = "035260089";
 
 WebServer server(80);
 
-void setup_camera() {
+void receiveEvent(int howMany) {
+  if (howMany == SENSOR_DATA_SIZE) {
+    Wire.readBytes((byte*)&receivedSensorData, SENSOR_DATA_SIZE);
+    newSensorDataAvailable = true;
+    Serial.println("Received sensor data from UNO via I2C.");
+  } else {
+    Serial.print("Received unexpected I2C data size: ");
+    Serial.println(howMany);
+    // Consume the unexpected data to clear the buffer
+    while(Wire.available()) {
+      Wire.read();
+    }
+  }
+}
+
+void requestEvent() {
+  Wire.write((byte*)&currentCommandData, COMMAND_DATA_SIZE);
+  Serial.println("Sent command data to UNO via I2C.");
+}
+
+void http_sync_callback(void* arg) {
+  #if HAS_UNO_I2C
+  // 檢查是否有新的感測器數據可用
+  if (!newSensorDataAvailable) {
+    Serial.println("No new sensor data from UNO. Skipping HTTP sync.");
+    return;
+  }
+
+  // 重置標誌
+  newSensorDataAvailable = false;
+#endif
+
+  // 確保後端伺服器 IP 已知
+  if (backendServerIp.length() == 0) {
+    Serial.println("Backend server IP not discovered yet. Skipping HTTP sync.");
+    return;
+  }
+
+  HTTPClient http;
+  String serverPath = "http://" + backendServerIp + ":" + String(backendServerPort) + "/api/sync";
+
+  http.begin(serverPath);
+  http.addHeader("Content-Type", "application/json");
+
+  // 構建 JSON Payload
+  StaticJsonDocument<256> doc; // 根據 SensorData_t 的大小調整
+  uint8_t status_byte_temp = receivedSensorData.status_byte;
+  uint16_t voltage_mv_temp = receivedSensorData.voltage_mv;
+  int16_t ultrasonic_distance_cm_temp = receivedSensorData.ultrasonic_distance_cm;
+  int16_t thermal_matrix_flat_temp[64];
+  memcpy(thermal_matrix_flat_temp, (const void*)receivedSensorData.thermal_matrix_flat, sizeof(thermal_matrix_flat_temp));
+
+  doc["status_byte"] = status_byte_temp;
+  doc["voltage_mv"] = voltage_mv_temp;
+  doc["ultrasonic_distance_cm"] = ultrasonic_distance_cm_temp;
+
+  JsonArray thermal_array = doc.createNestedArray("thermal_matrix_flat");
+  for (int i = 0; i < 64; i++) {
+    thermal_array.add(thermal_matrix_flat_temp[i]);
+  }
+
+  String requestBody;
+  serializeJson(doc, requestBody);
+
+  Serial.print("Sending HTTP POST to: ");
+  Serial.println(serverPath);
+  Serial.print("Request Body: ");
+  Serial.println(requestBody);
+
+  int httpResponseCode = http.POST(requestBody);
+
+  if (httpResponseCode > 0) {
+    Serial.printf("HTTP Response code: %d\n", httpResponseCode);
+    String response = http.getString();
+    Serial.println("HTTP Response: " + response);
+
+    // 解析回應 JSON
+    StaticJsonDocument<128> response_doc; // 根據 CommandData_t 的大小調整
+    DeserializationError error = deserializeJson(response_doc, response);
+
+    if (!error) {
+      currentCommandData.command_byte = response_doc["command_byte"] | 0;
+      currentCommandData.motor_speed = response_doc["motor_speed"] | 0;
+      currentCommandData.direction_angle = response_doc["direction_angle"] | 0;
+      currentCommandData.servo_angle = response_doc["servo_angle"] | 0;
+      Serial.println("Updated command data from backend.");
+    } else {
+      Serial.print("Failed to parse JSON response: ");
+      Serial.println(error.c_str());
+    }
+  } else {
+    Serial.printf("HTTP Error: %s\n", http.errorToString(httpResponseCode).c_str());
+  }
+
+  http.end();
+}void setup_camera() {
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -132,6 +279,44 @@ void handle_stream() {
   }
 }
 
+void registerCamera() {
+  if (backendServerIp.length() == 0) {
+    Serial.println("Backend server IP not discovered yet. Cannot register camera.");
+    return;
+  }
+
+  HTTPClient http;
+  String serverPath = "http://" + backendServerIp + ":" + String(backendServerPort) + "/api/register_camera";
+
+  http.begin(serverPath);
+  http.addHeader("Content-Type", "application/json");
+
+  StaticJsonDocument<256> doc; // Adjust size as needed for registration payload
+  doc["esp32_ip"] = WiFi.localIP().toString();
+  doc["esp32_mac"] = WiFi.macAddress();
+
+  String requestBody;
+  serializeJson(doc, requestBody);
+
+  Serial.print("Sending camera registration to: ");
+  Serial.println(serverPath);
+  Serial.print("Request Body: ");
+  Serial.println(requestBody);
+
+  int httpResponseCode = http.POST(requestBody);
+
+  if (httpResponseCode > 0) {
+    Serial.printf("Camera registration HTTP Response code: %d\n", httpResponseCode);
+    String response = http.getString();
+    Serial.println("Camera registration HTTP Response: " + response);
+    // You might want to parse the response here to confirm successful registration
+  } else {
+    Serial.printf("Camera registration HTTP Error: %s\n", http.errorToString(httpResponseCode).c_str());
+  }
+
+  http.end();
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(false);
@@ -157,21 +342,104 @@ void setup() {
   server.begin();
   Serial.println("Web server started.");
 
+  // 初始化 UDP 監聽
+#if USE_UDP_DISCOVERY
+  if (udp.listen(UDP_BROADCAST_PORT)) {
+    Serial.print("UDP listening on port ");
+    Serial.println(UDP_BROADCAST_PORT);
+    udp.onPacket([](AsyncUDPPacket packet) {
+      Serial.print("UDP Packet Type: ");
+      Serial.print(packet.isBroadcast() ? "Broadcast" : packet.isMulticast() ? "Multicast" : "Unicast");
+      Serial.print(", From: ");
+      Serial.print(packet.remoteIP());
+      Serial.print(":");
+      Serial.print(packet.remotePort());
+      Serial.print(", Length: ");
+      Serial.print(packet.length());
+      Serial.print(", Data: ");
+      String data = (char*)packet.data();
+      Serial.println(data);
+      Serial.print("Raw UDP Packet Data (Hex): ");
+      for (int i = 0; i < packet.length(); i++) {
+        if (packet.data()[i] < 16) Serial.print("0");
+        Serial.print(packet.data()[i], HEX);
+        Serial.print(" ");
+      }
+      Serial.println();
+
+      // 解析廣播訊息，尋找伺服器 IP
+      if (data.startsWith("MINIAUTO_SERVER_IP:")) {
+        int firstColon = data.indexOf(':');
+        int secondColon = data.indexOf(':', firstColon + 1);
+        if (firstColon != -1 && secondColon != -1) {
+          backendServerIp = data.substring(firstColon + 1, secondColon);
+          backendServerPort = data.substring(secondColon + 1).toInt();
+          Serial.print("Discovered Backend Server IP: ");
+          Serial.print(backendServerIp);
+          Serial.print(", Port: ");
+          Serial.println(backendServerPort);
+
+          // 如果 HTTP 同步定時器尚未啟動，則啟動它
+          if (!httpSyncTimerStarted) {
+            const esp_timer_create_args_t http_sync_timer_args = {
+              .callback = &http_sync_callback, // 定時器回調函數
+              .name = "http_sync_timer" // 定時器名稱
+            };
+            ESP_ERROR_CHECK(esp_timer_create(&http_sync_timer_args, &http_sync_timer));
+            ESP_ERROR_CHECK(esp_timer_start_periodic(http_sync_timer, HTTP_SYNC_INTERVAL_MS * 1000)); // 啟動定時器，單位微秒
+            Serial.println("HTTP Sync Timer initialized and started.");
+            httpSyncTimerStarted = true;
+          }
+
+          // 如果攝影機尚未註冊，則註冊它
+          if (!cameraRegistered) {
+            registerCamera();
+            cameraRegistered = true;
+          }
+        }
+      }
+    });
+  } else {
+    Serial.println("Failed to start UDP listener!");
+  }
+#else // USE_UDP_DISCOVERY is 0
+  backendServerIp = MANUAL_BACKEND_SERVER_IP;
+  backendServerPort = MANUAL_BACKEND_SERVER_PORT;
+  Serial.print("Using manual Backend Server IP: ");
+  Serial.print(backendServerIp);
+  Serial.print(", Port: ");
+  Serial.println(backendServerPort);
+
+  // 啟動 HTTP 同步定時器
+  const esp_timer_create_args_t http_sync_timer_args = {
+    .callback = &http_sync_callback, // 定時器回調函數
+    .name = "http_sync_timer" // 定時器名稱
+  };
+  ESP_ERROR_CHECK(esp_timer_create(&http_sync_timer_args, &http_sync_timer));
+  ESP_ERROR_CHECK(esp_timer_start_periodic(http_sync_timer, HTTP_SYNC_INTERVAL_MS * 1000)); // 啟動定時器，單位微秒
+  Serial.println("HTTP Sync Timer initialized and started.");
+  httpSyncTimerStarted = true;
+
+  // 註冊攝影機
+  registerCamera();
+  cameraRegistered = true;
+#endif
+
   // Initialize I2C as slave
   Wire.begin(I2C_SLAVE_ADDRESS, I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.onRequest(sendIpAddress);
+  Wire.onReceive(receiveEvent); // 註冊接收事件回調
+  Wire.onRequest(requestEvent); // 註冊請求事件回調
   Serial.println("I2C Slave initialized.");
+
+  // 初始化命令數據為停止狀態
+  currentCommandData.command_byte = 0;
+  currentCommandData.motor_speed = 0;
+  currentCommandData.direction_angle = 0;
+  currentCommandData.servo_angle = 90;
 }
 
 void loop() {
   server.handleClient();
-}
-
-void sendIpAddress() {
-  String ipAddress = WiFi.localIP().toString();
-  Serial.print("Sending IP via I2C: ");
-  Serial.println(ipAddress);
-  for (char c : ipAddress) {
-    Wire.write((uint8_t)c);
-  }
+  // esp_timer 會在背景運行，不需要在 loop 中額外呼叫
+  // AsyncUDP 也在背景運行，不需要在 loop 中額外呼叫
 }
