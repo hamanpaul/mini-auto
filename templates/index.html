@@ -277,7 +277,8 @@
                         'Fetching latest data...',
                         'Fetching backend logs...',
                         'Latest data fetched successfully.',
-                        'Backend logs fetched successfully.'
+                        'Backend logs fetched successfully.',
+                        'fetchData: Backend has ESP32 IP (192.168.0.147), and frontend already has it.'
                     ];
                     if (level === 'debug' && filteredMessages.includes(message)) {
                         return; // Do not log these specific debug messages
@@ -292,6 +293,7 @@
                     });
                 },
                 handleKeyDown(event) {
+                    this.addLog(`handleKeyDown triggered for key: ${event.key.toLowerCase()}`, 'gui', 'debug');
                     if (event.repeat) return; // Ignore key repeat
                     const key = event.key.toLowerCase();
                     if (['w', 'a', 's', 'd'].includes(key)) {
@@ -301,6 +303,7 @@
                     this.updateMotorControl();
                 },
                 handleKeyUp(event) {
+                    this.addLog(`handleKeyUp triggered for key: ${event.key.toLowerCase()}`, 'gui', 'debug');
                     const key = event.key.toLowerCase();
                     if (['w', 'a', 's', 'd'].includes(key)) {
                         this.addLog(`Key up: '${key}'`, 'gui', 'debug');
@@ -309,6 +312,7 @@
                     this.updateMotorControl();
                 },
                 updateMotorControl() {
+                    this.addLog(`updateMotorControl: activeKeys state: ${JSON.stringify(this.activeKeys)}`, 'gui', 'debug');
                     let newMotorSpeed = 0;
                     let newDirectionAngle = 0;
 
@@ -325,6 +329,8 @@
                         newMotorSpeed = this.speedSliderValue;
                         newDirectionAngle = 90; // Turn Right
                     }
+
+                    this.addLog(`updateMotorControl: Calculated M=${newMotorSpeed}, D=${newDirectionAngle} (from speedSliderValue=${this.speedSliderValue})`, 'gui', 'debug');
 
                     // Only send if control state changes
                     if (newMotorSpeed !== this.motorSpeed || newDirectionAngle !== this.directionAngle) {
@@ -388,7 +394,9 @@
                         this.addLog(`Register camera response: ${JSON.stringify(data)}`, 'remote', 'info');
                         this.esp32CamIp = ip;
                         this.addLog(`esp32CamIp successfully set to: ${this.esp32CamIp}`, 'gui', 'info');
-                        this.addLog(`esp32CamIp successfully set to: ${this.esp32CamIp}`, 'gui', 'info');
+                        // 在成功註冊後自動啟動串流
+                        this.addLog('Camera registered, attempting to start stream automatically...', 'gui', 'info');
+                        await this.toggleStream();
                     } catch (error) {
                         this.addLog(`Error registering camera: ${error.message}`, 'gui', 'error');
                         console.error('Error registering camera:', error);
@@ -431,8 +439,18 @@
                         this.latest_data = data.latest_data;
                         this.latest_command = data.latest_command;
                         if (data.esp32_cam_ip && !this.esp32CamIp) {
+                            this.addLog(`fetchData: Backend has ESP32 IP (${data.esp32_cam_ip}), but frontend does not.`, 'gui', 'debug');
                             this.esp32CamIp = data.esp32_cam_ip;
                             this.addLog(`esp32CamIp updated from backend: ${this.esp32CamIp}`, 'gui', 'info');
+                            // 如果從後端獲取到 ESP32 IP 且串流尚未啟動，則自動啟動串流
+                            if (!this.streamUrl) {
+                                this.addLog('ESP32 IP detected, attempting to start stream automatically...', 'gui', 'info');
+                                await this.toggleStream();
+                            }
+                        } else if (data.esp32_cam_ip && this.esp32CamIp) {
+                            this.addLog(`fetchData: Backend has ESP32 IP (${data.esp32_cam_ip}), and frontend already has it.`, 'gui', 'debug');
+                        } else if (!data.esp32_cam_ip) {
+                            this.addLog(`fetchData: Backend does not have ESP32 IP yet.`, 'gui', 'debug');
                         }
                         if (data.current_control_mode) {
                             this.currentControlMode = data.current_control_mode;
