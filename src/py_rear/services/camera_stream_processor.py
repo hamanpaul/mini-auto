@@ -16,6 +16,9 @@ class CameraStreamProcessor:
         self._latest_processed_frame = None # 儲存最新的已處理影像幀（OpenCV 影像物件）。
         self._latest_visual_analysis_results = None # 儲存最新的視覺分析結果。
         self._lock = threading.Lock() # 創建一個執行緒鎖，用於安全地訪問共享資料（影像幀）。
+        self._prev_frame_time = 0 # 用於計算 FPS 的前一幀時間。
+        self._frame_count = 0 # 用於計算 FPS 的幀計數。
+        self._fps = 0.0 # 儲存計算出的 FPS。
 
     # 更新影像串流來源的函數。
     def update_stream_source(self, esp32_cam_ip: str):

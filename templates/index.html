@@ -187,7 +187,7 @@
         </div>
 
         <div class="center-column center-panel">
-            <h2>Live Feed</h2>
+            <h2>Live Feed <span style="font-size: 0.7em; color: #555;">(FPS: {{ fpsValue }})</span></h2>
             <div class="camera-feed-container">
                 <img v-if="streamUrl" :src="streamUrl" alt="ESP32-S3 Stream" style="max-width:100%;">
                 <div v-if="!esp32CamIp">Camera IP not registered. Click button on the right.</div>
@@ -236,7 +236,8 @@
                 debugLogs: [],
                 activeKeys: {},
                 streamUrl: '', // To hold the dynamic stream URL
-                streamButtonText: 'Start Stream' // Text for the stream button
+                streamButtonText: 'Start Stream', // Text for the stream button
+                fpsValue: 0 // New property for FPS value
             },
             methods: {
                 async toggleStream() {
@@ -455,6 +456,17 @@
                         if (data.current_control_mode) {
                             this.currentControlMode = data.current_control_mode;
                         }
+
+                        // Fetch camera status for FPS
+                        const cameraStatusResponse = await fetch('/camera/status');
+                        if (cameraStatusResponse.ok) {
+                            const cameraStatusData = await cameraStatusResponse.json();
+                            this.fpsValue = cameraStatusData.fps || 0;
+                        } else {
+                            this.addLog(`Error fetching camera status: ${cameraStatusResponse.status}`, 'gui', 'error');
+                            this.fpsValue = 0; // Reset FPS on error
+                        }
+
                         this.addLog(`Latest data fetched successfully.`, 'gui', 'debug');
                     } catch (error) {
                         this.addLog(`Error fetching data: ${error.message}`, 'gui', 'error');

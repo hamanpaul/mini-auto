@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Body, Depends, Request # 導入 Fa
 from fastapi import APIRouter, HTTPException, Body, Depends, Request # 導入 FastAPI 相關模組：APIRouter 用於定義路由，HTTPException 用於處理 HTTP 錯誤，Body 用於從請求體中獲取資料，Depends 用於依賴注入，Request 用於訪問請求物件。
 from pydantic import BaseModel # 導入 BaseModel，用於定義資料模型，實現資料驗證和序列化。
 from enum import Enum # 導入 Enum，用於創建枚舉類型。
-from typing import Optional, List # 導入 Optional 和 List，用於型別提示。
+from typing import Optional, List, Any # 導入 Optional 和 List，用於型別提示。
 from datetime import datetime # 導入 datetime，用於處理日期和時間。
 from src.py_rear.apis import camera as apis_camera # 導入 camera 模組，用於存取 camera_processor 實例。
 
@@ -43,11 +43,15 @@ latest_thermal_analysis_results: Optional[dict] = None # 最新熱像儀分析�
 
 # 定義資料模型：SyncRequest，用於同步請求的資料結構。
 class SyncRequest(BaseModel):
-    s: int  # 狀態位元組 (status_byte)
-    v: int  # 電壓 (voltage_mv)
-    t: Optional[List[List[int]]] = None  # 熱像儀矩陣 (thermal_matrix)，可選。
-    i: Optional[str] = None # ESP32 IP 位址 (esp32_ip)，可選。
-    u: Optional[int] = None # 超音波距離 (ultrasonic_distance_cm)，可選。
+    s: int  # status_byte
+    v: int  # voltage_mv
+    u: Optional[int] = None  # ultrasonic_distance_cm
+    # 熱成像特徵值
+    t_max: Optional[int] = None  # thermal_max_temp
+    t_min: Optional[int] = None  # thermal_min_temp
+    t_hx: Optional[int] = None  # thermal_hotspot_x
+    t_hy: Optional[int] = None  # thermal_hotspot_y
+    i: Optional[str] = None  # esp32_ip
 
     # 手動控制欄位 (可選)，用於從 Arduino 接收手動控制指令。
     m: Optional[int] = None  # 馬達速度 (motor_speed)
@@ -74,8 +78,8 @@ async def sync_data(request: SyncRequest) -> SyncResponse:
     print(f"電壓: {latest_arduino_data.get('v')}mV") # 列印電壓。
     if latest_arduino_data.get('u') is not None: # 如果有超音波距離資料，則列印。
         print(f"超音波距離: {latest_arduino_data.get('u')}cm")
-    if latest_arduino_data.get('t') is not None: # 如果有熱像儀資料，則進行分析並列印結果。
-        latest_thermal_analysis_results = _analyze_thermal_data(latest_arduino_data['t'])
+    if latest_arduino_data.get('t_max') is not None: # 如果有熱像儀資料，則進行分析並列印結果。
+        latest_thermal_analysis_results = _analyze_thermal_data(latest_arduino_data['t_max'], latest_arduino_data['t_min'], latest_arduino_data['t_hx'], latest_arduino_data['t_hy'])
         print(f"熱像儀分析: {latest_thermal_analysis_results}")
     print(f"--------------------------") # 列印分隔線。
 
@@ -276,20 +280,24 @@ def _generate_autonomous_commands() -> SyncResponse:
     )
 
 # 分析熱像儀資料。
-def _analyze_thermal_data(thermal_matrix: List[List[int]]) -> dict:
-    # 將整數值（乘以 100）轉換為浮點數溫度。
-    flat_temps = [temp / 100.0 for row in thermal_matrix for temp in row]
-    
-    max_temp = max(flat_temps) # 計算最高溫度。
-    min_temp = min(flat_temps) # 計算最低溫度。
-    avg_temp = sum(flat_temps) / len(flat_temps) # 計算平均溫度。
+def _analyze_thermal_data(thermal_max_temp: Optional[int], thermal_min_temp: Optional[int], thermal_hotspot_x: Optional[int], thermal_hotspot_y: Optional[int]) -> dict[str, Any]:
+    if thermal_max_temp is None or thermal_min_temp is None:
+        return {"status": "no_data"}
 
-    # 簡單的熱點偵測：任何溫度高於 30.0 攝氏度。
-    hotspot_detected = any(temp > 30.0 for temp in flat_temps) # 檢查是否存在熱點。
+    # 將溫度值從 *100 的格式轉換回來
+    max_temp_c = thermal_max_temp / 100.0
+    min_temp_c = thermal_min_temp / 100.0
+
+    # 這裡可以根據需求添加更複雜的分析邏輯
+    # 例如，判斷是否有熱點、溫度閾值等
+    hotspot_detected = False
+    if thermal_max_temp > 3500: # 假設超過 35 攝氏度為熱點
+        hotspot_detected = True
 
     return {
-        "max_temp": round(max_temp, 2), # 返回最高溫度，保留兩位小數。
-        "min_temp": round(min_temp, 2), # 返回最低溫度，保留兩位小數。
-        "avg_temp": round(avg_temp, 2), # 返回平均溫度，保留兩位小數。
-        "hotspot_detected": hotspot_detected # 返回是否偵測到熱點。
+        "max_temp": max_temp_c,
+        "min_temp": min_temp_c,
+        "hotspot_x": thermal_hotspot_x,
+        "hotspot_y": thermal_hotspot_y,
+        "hotspot_detected": hotspot_detected
     }

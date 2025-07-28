@@ -22,6 +22,8 @@
 
 // --- 常數定義 ---
 #define SERIAL_TEST_MODE 1 // 設定為 1 啟用 Serial 測試模式，0 禁用
+#define BUZZER_ENABLE 0
+#define IR_IMG_ENABLE 0
 
 // --- I2C 從機位址 ---
 #define ESP32_I2C_SLAVE_ADDRESS 0x53 // 定義 ESP32 模組的 I2C 從機位址。
@@ -33,10 +35,11 @@ typedef struct __attribute__((packed)) {
   uint8_t status_byte;      // 狀態位元組 (s)
   uint16_t voltage_mv;      // 電壓 (v)，單位毫伏
   int16_t ultrasonic_distance_cm; // 超音波距離 (u)，單位厘米，-1 表示無效
-  // 熱像儀數據 (t) - 8x8 矩陣，每個像素 2 位元組 (int16_t)
-  // 為了簡化 I2C 傳輸，我們將熱像儀數據作為一個扁平的陣列
-  // 總共 64 個像素 * 2 位元組/像素 = 128 位元組
-  int16_t thermal_matrix_flat[64]; 
+  // 熱成像數據的特徵值
+  int16_t thermal_max_temp; // 最高溫度 * 100
+  int16_t thermal_min_temp; // 最低溫度 * 100
+  uint8_t thermal_hotspot_x; // 最熱點的 X 座標 (0-7)
+  uint8_t thermal_hotspot_y; // 最熱點的 Y 座標 (0-7)
 } SensorData_t;
 
 // 定義後端控制指令的結構體
@@ -82,6 +85,11 @@ const long commandPollInterval = 200; // 命令輪詢間隔，單位毫秒。
 
 
 // --- 全域狀態變數 ---
+// 用於比較 I2C 數據是否變化的全域變數
+SensorData_t lastSentSensorData = {};
+CommandData_t lastReceivedCommand = {};
+bool isFirstSync = true;
+
 int g_current_voltage_mv = 0; // 當前電壓，單位毫伏。
 
 bool g_thermal_sensor_error = false; // 熱像儀感測器錯誤狀態。
@@ -121,7 +129,9 @@ void setup() {
   myservo.attach(servoPin); // 將舵機連接到指定的引腳。
   myservo.write(90); // 將舵機設置到 90 度（通常是中間位置）。
 
+#if BUZZER_ENABLE
   tone(buzzerPin, 1200, 100); // 蜂鳴器發出 1200 Hz 的聲音，持續 100 毫秒。
+#endif
 
   FastLED.addLeds<WS2812, ledPin, RGB>(rgbs, 1); // 將 WS2812B LED 添加到 FastLED 庫中，指定引腳和 LED 數量。
   FastLED.setBrightness(50); // 設定 LED 的亮度為 50（最大 255）。
@@ -171,6 +181,7 @@ void setLedStatus(uint8_t led_code) { // 根據代碼設定 LED 狀態。
 }
 
 void controlBuzzer(uint8_t buzzer_code) { // 控制蜂鳴器。
+#if BUZZER_ENABLE
   static unsigned long lastBuzzerActionTime = 0; // 靜態變數，記錄上次蜂鳴器動作的時間。
   static bool buzzerState = false; // 靜態變數，記錄蜂鳴器狀態。
   const unsigned long SHORT_BEEP_DURATION = 100; // 短蜂鳴持續時間。
@@ -212,6 +223,7 @@ void controlBuzzer(uint8_t buzzer_code) { // 控制蜂鳴器。
       buzzerState = false; // 設定蜂鳴器狀態為關閉。
       break;
   }
+  #endif
 }
 
 // --- 狀態計算 ---
@@ -255,74 +267,86 @@ uint8_t getLedStatusCode(uint8_t current_error_code, bool is_busy) { // 獲取 L
 // --- 主同步函數 ---
 void syncWithServer() { // 與 ESP32 進行數據同步
   // 1. 收集感測器數據
-  mySensorData.status_byte = 0; // 初始化狀態位元組
-  mySensorData.status_byte |= getBatteryLevelCode(); // 將電池電量代碼添加到狀態位元組
-
-  // 讀取超音波距離
+  mySensorData.status_byte = 0;
+  mySensorData.status_byte |= getBatteryLevelCode();
   mySensorData.ultrasonic_distance_cm = ultrasound.GetDistance();
 
-  // 讀取熱像儀數據
+#if IR_IMG_ENABLE
   bool include_thermal = false;
   static unsigned long lastThermalSendTime = 0;
-  if (millis() - lastThermalSendTime >= 1000) { // 每秒更新一次熱像儀數據
-    if (sensor.updatePixelMatrix() == 0) { // 如果熱像儀數據更新成功
-      g_thermal_sensor_error = false; // 清除熱像儀錯誤標誌
-      include_thermal = true; // 設定包含熱像儀資料
-      lastThermalSendTime = millis(); // 更新上次發送時間
-      // 將 8x8 矩陣扁平化到結構體中
+  if (millis() - lastThermalSendTime >= 1000) {
+    if (sensor.updatePixelMatrix() == 0) {
+      g_thermal_sensor_error = false;
+      include_thermal = true;
+      lastThermalSendTime = millis();
       for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
           mySensorData.thermal_matrix_flat[i * 8 + j] = sensor.pixelMatrix[i][j];
         }
       }
-    } else { // 如果熱像儀數據更新失敗
-      g_thermal_sensor_error = true; // 設定熱像儀錯誤標誌
+    } else {
+      g_thermal_sensor_error = true;
     }
   }
-  if (!g_thermal_sensor_error) mySensorData.status_byte |= (1 << 2); // 如果熱像儀沒有錯誤，設定狀態位元組的第 2 位
+#else
+  g_thermal_sensor_error = true;
+#endif
 
-  // 獲取錯誤代碼並更新狀態位元組
+  if (!g_thermal_sensor_error) mySensorData.status_byte |= (1 << 2);
   uint8_t error_code = getErrorCode();
-  mySensorData.status_byte |= (error_code << 4); // 將錯誤代碼添加到狀態位元組的第 4 位開始
+  mySensorData.status_byte |= (error_code << 4);
 
-  // 2. 透過 I2C 推送感測器數據給 ESP32
-  Wire.beginTransmission(ESP32_I2C_SLAVE_ADDRESS); // 開始向 ESP32 發送
-  Wire.write((byte*)&mySensorData, SENSOR_DATA_SIZE); // 將結構體內容作為位元組發送
-  byte i2c_tx_status = Wire.endTransmission(); // 結束傳輸
+  // 2. 透過 I2C 分塊推送感測器數據給 ESP32
+  Wire.beginTransmission(ESP32_I2C_SLAVE_ADDRESS);
+  byte *dataPtr = (byte*)&mySensorData;
+  size_t bytesSent = Wire.write(dataPtr, SENSOR_DATA_SIZE);
+  byte i2c_tx_status = Wire.endTransmission();
 
-  if (i2c_tx_status == 0) { // 如果發送成功
-    Serial.println(F("Sent sensor data to ESP32 via I2C."));
-    g_communication_error = false; // 清除通訊錯誤標誌
+  if (i2c_tx_status == 0 && bytesSent == SENSOR_DATA_SIZE) {
+    if (isFirstSync || memcmp(&mySensorData, &lastSentSensorData, SENSOR_DATA_SIZE) != 0) {
+      Serial.println(F("I2C TX -> Sent updated sensor data to ESP32."));
+      memcpy(&lastSentSensorData, &mySensorData, SENSOR_DATA_SIZE);
+    } else {
+      Serial.print(F("t")); // 數據未變，精簡輸出
+    }
   } else {
-    Serial.print(F("Error sending sensor data to ESP32 via I2C: "));
-    Serial.println(i2c_tx_status);
-    g_communication_error = true; // 設定通訊錯誤標誌
+    Serial.print(F("I2C TX -> Error: ")); Serial.print(i2c_tx_status);
+    Serial.print(F(", Bytes Sent: ")); Serial.println(bytesSent);
   }
 
   // 3. 透過 I2C 從 ESP32 拉取控制指令
-  Wire.requestFrom(ESP32_I2C_SLAVE_ADDRESS, COMMAND_DATA_SIZE); // 從 ESP32 請求指令數據
+  uint8_t bytesRead = Wire.requestFrom(ESP32_I2C_SLAVE_ADDRESS, COMMAND_DATA_SIZE);
 
-  if (Wire.available() == COMMAND_DATA_SIZE) { // 如果接收到的數據大小正確
-    Wire.readBytes((byte*)&receivedCommand, COMMAND_DATA_SIZE); // 讀取位元組到結構體
-    Serial.println(F("Received command data from ESP32 via I2C."));
-    g_communication_error = false; // 清除通訊錯誤標誌
+  if (bytesRead == COMMAND_DATA_SIZE) {
+    byte buffer[COMMAND_DATA_SIZE];
+    Wire.readBytes(buffer, COMMAND_DATA_SIZE);
+    
+    if (isFirstSync || memcmp(buffer, &lastReceivedCommand, COMMAND_DATA_SIZE) != 0) {
+      memcpy(&receivedCommand, buffer, COMMAND_DATA_SIZE);
+      memcpy(&lastReceivedCommand, buffer, COMMAND_DATA_SIZE);
 
-    // 執行指令
-    controlBuzzer(receivedCommand.command_byte & 0b11); // 控制蜂鳴器
-    Velocity_Controller(receivedCommand.direction_angle, receivedCommand.motor_speed, 0); // 控制車輛速度和方向
-    myservo.write(receivedCommand.servo_angle); // 設定舵機角度
+      Serial.println();
+      Serial.print(F("I2C RX <- Received new command: c=")); Serial.print(receivedCommand.command_byte);
+      Serial.print(F(", m=")); Serial.print(receivedCommand.motor_speed);
+      Serial.print(F(", d=")); Serial.print(receivedCommand.direction_angle);
+      Serial.print(F(", a=")); Serial.println(receivedCommand.servo_angle);
 
-    uint8_t override_led_code = (receivedCommand.command_byte >> 2) & 0b11; // 從命令位元組中提取覆蓋 LED 代碼
-    uint8_t final_led_code = override_led_code != 0 ? override_led_code : getLedStatusCode(error_code, false); // 根據覆蓋代碼或當前狀態獲取最終 LED 代碼
-    setLedStatus(final_led_code); // 設定 LED 狀態
-
+      // 執行指令
+      controlBuzzer(receivedCommand.command_byte & 0b11);
+      Velocity_Controller(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+      myservo.write(receivedCommand.servo_angle);
+      uint8_t override_led_code = (receivedCommand.command_byte >> 2) & 0b11;
+      uint8_t final_led_code = override_led_code != 0 ? override_led_code : getLedStatusCode(error_code, false);
+      setLedStatus(final_led_code);
+    } else {
+      Serial.print(F("r")); // 數據未變，精簡輸出
+    }
   } else {
-    Serial.print(F("Error receiving command data from ESP32 via I2C. Bytes available: "));
-    Serial.println(Wire.available());
-    g_communication_error = true; // 設定通訊錯誤標誌
-    setLedStatus(0); // 失敗時關閉 LED
+    Serial.print(F("E")); // 錯誤
   }
-  Serial.println(F("---------------------------"));
+  
+  isFirstSync = false; // 第一次同步完成
+  Serial.println(); // 換行保持輸出整潔
 }
 
 
@@ -421,6 +445,3 @@ void handleSerialCommand() {
     }
   }
 }
-
-
-
