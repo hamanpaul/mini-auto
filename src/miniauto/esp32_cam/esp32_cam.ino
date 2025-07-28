@@ -22,6 +22,7 @@ const int MANUAL_BACKEND_SERVER_PORT = 8000; // <<< CHANGE THIS TO YOUR BACKEND 
 #include "WiFi.h"
 #include "WebServer.h"
 #include "Wire.h"
+#include <VehicleData.h>
 #include <HTTPClient.h> // 用於發送 HTTP 請求到後端伺服器
 #include <ArduinoJson.h> // 用於處理 JSON 數據
 #include <AsyncUDP.h> // 用於監聽 UDP 廣播，發現後端伺服器 IP
@@ -35,26 +36,7 @@ const char* password = "035260089";
 #define I2C_SDA_PIN 47
 #define I2C_SCL_PIN 48
 
-// --- I2C 數據結構定義 (與 UNO 保持一致) ---
-// 定義 UNO 感測器數據的結構體
-typedef struct __attribute__((packed)) {
-  uint8_t status_byte;      // 狀態位元組 (s)
-  uint16_t voltage_mv;      // 電壓 (v)，單位毫伏
-  int16_t ultrasonic_distance_cm; // 超音波距離 (u)，單位厘米，-1 表示無效
-  // 熱成像數據的特徵值
-  int16_t thermal_max_temp; // 最高溫度 * 100
-  int16_t thermal_min_temp; // 最低溫度 * 100
-  uint8_t thermal_hotspot_x; // 最熱點的 X 座標 (0-7)
-  uint8_t thermal_hotspot_y; // 最熱點的 Y 座標 (0-7)
-} SensorData_t;
 
-// 定義後端控制指令的結構體
-typedef struct __attribute__((packed)) {
-  uint8_t command_byte;     // 命令位元組 (c)
-  int16_t motor_speed;      // 馬達速度 (m)
-  int16_t direction_angle;  // 方向角度 (d)
-  int16_t servo_angle;      // 舵機角度 (a)
-} CommandData_t;
 
 // 計算結構體大小
 const size_t SENSOR_DATA_SIZE = sizeof(SensorData_t);

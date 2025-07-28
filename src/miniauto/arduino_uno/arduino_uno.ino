@@ -1,54 +1,20 @@
-/*
-  Arduino API Client for Vehicle Control (Memory Optimized)
+#include <Wire.h>
+#include <Melopero_AMG8833.h>
+#include <FastLED.h>
+#include <Servo.h>
+#include <math.h>
+#include <Ultrasound.h>
+#include "VehicleData.h"
+#include "MotorController.h"
 
-  這個程式碼（sketch）運行在 Arduino UNO 上，透過 I2C 與 ESP32 模組通訊，
-  與 Python FastAPI 伺服器進行互動。它負責發送車輛狀態更新並接收移動命令。
-
-  此版本經過重構，旨在最小化 SRAM 使用量，方法包括：
-  1. 使用 F() 巨集將常數字串儲存在 Flash 記憶體中，以節省 SRAM。
-  2. 將動態 'String' 物件替換為靜態 'char' 陣列，避免記憶體碎片化。
-  3. 透過 I2C 傳輸結構化數據，減少通訊開銷。
-  4. 專注於硬體控制，將網路通訊任務轉移至 ESP32。
-*/
-
-// --- 引入函式庫 ---
-#include <Wire.h> // 引入 Wire 函式庫，用於 I2C 通訊，與熱像儀和 ESP32-CAM 模組通訊。
-#include <Melopero_AMG8833.h> // 引入 Melopero_AMG8833 函式庫，用於控制 AMG8833 熱像儀。
-
-#include <FastLED.h> // 引入 FastLED 函式庫，用於控制 WS2812B RGB LED。
-#include <Servo.h> // 引入 Servo 函式庫，用於控制舵機。
-#include <math.h> // 引入 math 函式庫，提供數學函數，例如三角函數。
-#include <Ultrasound.h> // 引入 Ultrasound 函式庫，用於超音波感測器。
 
 // --- 常數定義 ---
-#define SERIAL_TEST_MODE 1 // 設定為 1 啟用 Serial 測試模式，0 禁用
+#define SERIAL_TEST_MODE 0 // 設定為 1 啟用 Serial 測試模式，0 禁用
 #define BUZZER_ENABLE 0
-#define IR_IMG_ENABLE 0
+#define IR_IMG_ENABLE 1
 
 // --- I2C 從機位址 ---
 #define ESP32_I2C_SLAVE_ADDRESS 0x53 // 定義 ESP32 模組的 I2C 從機位址。
-
-// --- I2C 數據結構定義 (與 ESP32 保持一致) ---
-// 定義 UNO 感測器數據的結構體
-// 使用 __attribute__((packed)) 確保結構體成員緊密排列，沒有填充位元組
-typedef struct __attribute__((packed)) {
-  uint8_t status_byte;      // 狀態位元組 (s)
-  uint16_t voltage_mv;      // 電壓 (v)，單位毫伏
-  int16_t ultrasonic_distance_cm; // 超音波距離 (u)，單位厘米，-1 表示無效
-  // 熱成像數據的特徵值
-  int16_t thermal_max_temp; // 最高溫度 * 100
-  int16_t thermal_min_temp; // 最低溫度 * 100
-  uint8_t thermal_hotspot_x; // 最熱點的 X 座標 (0-7)
-  uint8_t thermal_hotspot_y; // 最熱點的 Y 座標 (0-7)
-} SensorData_t;
-
-// 定義後端控制指令的結構體
-typedef struct __attribute__((packed)) {
-  uint8_t command_byte;     // 命令位元組 (c)
-  int16_t motor_speed;      // 馬達速度 (m)
-  int16_t direction_angle;  // 方向角度 (d)
-  int16_t servo_angle;      // 舵機角度 (a)
-} CommandData_t;
 
 // 計算結構體大小
 const size_t SENSOR_DATA_SIZE = sizeof(SensorData_t);
@@ -62,27 +28,17 @@ CommandData_t receivedCommand; // 用於儲存從 ESP32 接收的控制指令
 const static uint8_t ledPin = 2; // 定義 RGB LED 的資料引腳。
 const static uint8_t buzzerPin = 3; // 定義蜂鳴器的引腳。
 const static uint8_t servoPin = 5; // 定義舵機的控制引腳。
-const static uint8_t motorpwmPin[4] = {10, 9, 6, 11}; // 定義四個馬達的 PWM 控制引腳。
-const static uint8_t motordirectionPin[4] = {12, 8, 7, 13}; // 定義四個馬達的方向控制引腳。
-
-
-
-
 
 // --- 硬體與感測器物件 ---
 Melopero_AMG8833 sensor; // 創建 AMG8833 熱像儀感測器物件。
 Servo myservo; // 創建舵機物件。
 Ultrasound ultrasound; // 創建超音波感測器物件。
 static CRGB rgbs[1]; // 創建一個 CRGB 陣列，用於 FastLED 庫控制 RGB LED。
+MotorController motor;
 
 // --- 時序控制 ---
-const static int pwmFrequency = 500;                /* PWM 頻率，單位是赫茲 */
-const static int period = 1000000 / pwmFrequency;  /* PWM 週期，單位是微秒 */
-static uint32_t previousTime_us = 0;          /* 上一次的微秒計數時間間隔，用於非阻塞延時 */
 unsigned long lastCommandPollTime = 0; // 上次輪詢命令的時間。
 const long commandPollInterval = 200; // 命令輪詢間隔，單位毫秒。
-
-
 
 // --- 全域狀態變數 ---
 // 用於比較 I2C 數據是否變化的全域變數
@@ -97,17 +53,7 @@ bool g_vision_module_error = false; // 視覺模組錯誤狀態。
 bool g_motor_error = false; // 馬達錯誤狀態。
 bool g_communication_error = false; // 通訊錯誤狀態。
 
-
-
 // --- 函數宣告 ---
-void Motor_Init(void); // 馬達初始化函數。
-void Velocity_Controller(uint16_t angle, uint8_t velocity, int8_t rot); // 速度控制器函數。
-void Motors_Set(int8_t Motor_0, int8_t Motor_1, int8_t Motor_2, int8_t Motor_3); // 設定馬達速度和方向函數。
-void PWM_Out(uint8_t PWM_Pin, int8_t DutyCycle); // PWM 輸出函數。
-
-
-
-
 void setLedStatus(uint8_t led_code); // 設定 LED 狀態函數。
 void controlBuzzer(uint8_t buzzer_code); // 控制蜂鳴器函數。
 uint8_t getBatteryLevelCode(); // 獲取電池電量代碼函數。
@@ -123,9 +69,7 @@ void setup() {
   while (!Serial) {} // 等待序列埠連接。
   Serial.println(F("Arduino UNO 已準備就緒。")); // 列印準備就緒訊息。
 
-  
-
-  Motor_Init(); // 初始化馬達。
+  motor.init(); // 初始化馬達。
   myservo.attach(servoPin); // 將舵機連接到指定的引腳。
   myservo.write(90); // 將舵機設置到 90 度（通常是中間位置）。
 
@@ -146,8 +90,6 @@ void setup() {
     Serial.println(F("感測器初始化成功。")); // 列印成功訊息。
     sensor.setFPSMode(FPS_MODE::FPS_10); // 設定感測器幀率模式為 10 FPS。
   }
-
-
 }
 
 // --- 主迴圈 (Main Loop) ---
@@ -261,10 +203,6 @@ uint8_t getLedStatusCode(uint8_t current_error_code, bool is_busy) { // 獲取 L
 }
 
 // --- I2C 通訊 ---
-
-  // --- I2C 通訊 ---
-
-// --- 主同步函數 ---
 void syncWithServer() { // 與 ESP32 進行數據同步
   // 1. 收集感測器數據
   mySensorData.status_byte = 0;
@@ -279,11 +217,29 @@ void syncWithServer() { // 與 ESP32 進行數據同步
       g_thermal_sensor_error = false;
       include_thermal = true;
       lastThermalSendTime = millis();
+      // 計算熱像儀特徵值
+      int16_t max_temp = -32768; // 最小值
+      int16_t min_temp = 32767;  // 最大值
+      uint8_t hotspot_x = 0;
+      uint8_t hotspot_y = 0;
+
       for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
-          mySensorData.thermal_matrix_flat[i * 8 + j] = sensor.pixelMatrix[i][j];
+          int16_t current_temp = sensor.pixelMatrix[i][j];
+          if (current_temp > max_temp) {
+            max_temp = current_temp;
+            hotspot_x = j;
+            hotspot_y = i;
+          }
+          if (current_temp < min_temp) {
+            min_temp = current_temp;
+          }
         }
       }
+      mySensorData.thermal_max_temp = max_temp;
+      mySensorData.thermal_min_temp = min_temp;
+      mySensorData.thermal_hotspot_x = hotspot_x;
+      mySensorData.thermal_hotspot_y = hotspot_y;
     } else {
       g_thermal_sensor_error = true;
     }
@@ -333,7 +289,7 @@ void syncWithServer() { // 與 ESP32 進行數據同步
 
       // 執行指令
       controlBuzzer(receivedCommand.command_byte & 0b11);
-      Velocity_Controller(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+      motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
       myservo.write(receivedCommand.servo_angle);
       uint8_t override_led_code = (receivedCommand.command_byte >> 2) & 0b11;
       uint8_t final_led_code = override_led_code != 0 ? override_led_code : getLedStatusCode(error_code, false);
@@ -347,63 +303,6 @@ void syncWithServer() { // 與 ESP32 進行數據同步
   
   isFirstSync = false; // 第一次同步完成
   Serial.println(); // 換行保持輸出整潔
-}
-
-
-
-
-  
-
-// --- 馬達控制函數 ---
-void Motor_Init(void) { // 馬達初始化。
-  for(uint8_t i = 0; i < 4; i++) { // 遍歷所有馬達。
-    pinMode(motordirectionPin[i], OUTPUT); // 設定馬達方向引腳為輸出模式。
-    pinMode(motorpwmPin[i], OUTPUT); // 設定馬達 PWM 引腳為輸出模式。
-  }
-  Velocity_Controller( 0, 0, 0); // 初始設定馬達停止。
-}
-
-void Velocity_Controller(uint16_t angle, uint8_t velocity,int8_t rot) { // 速度控制器。
-  int8_t velocity_0, velocity_1, velocity_2, velocity_3; // 四個馬達的速度變數。
-  float speed = 1; // 速度係數。
-  angle += 90; // 調整角度。
-  float rad = angle * PI / 180; // 將角度轉換為弧度。
-  if (rot == 0) speed = 1; // 如果沒有旋轉，速度係數為 1。
-  else speed = 0.5; // 如果有旋轉，速度係數為 0.5。
-  velocity /= sqrt(2); // 調整速度。
-  velocity_0 = (velocity * sin(rad) - velocity * cos(rad)) * speed + rot * speed; // 計算馬達 0 的速度。
-  velocity_1 = (velocity * sin(rad) + velocity * cos(rad)) * speed - rot * speed; // 計算馬達 1 的速度。
-  velocity_2 = (velocity * sin(rad) - velocity * cos(rad)) * speed - rot * speed; // 計算馬達 2 的速度。
-  velocity_3 = (velocity * sin(rad) + velocity * cos(rad)) * speed + rot * speed; // 計算馬達 3 的速度。
-  Motors_Set(velocity_0, velocity_1, velocity_2, velocity_3); // 設定馬達速度。
-}
- 
-void Motors_Set(int8_t Motor_0, int8_t Motor_1, int8_t Motor_2, int8_t Motor_3) { // 設定馬達速度和方向。
-  int8_t pwm_set[4]; // PWM 設定值陣列。
-  int8_t motors[4] = { Motor_0, Motor_1, Motor_2, Motor_3}; // 馬達速度陣列。
-  bool direction[4] = { 1, 0, 0, 1}; // 馬達方向陣列。
-  for(uint8_t i = 0; i < 4; ++i) { // 遍歷所有馬達。
-    if(motors[i] < 0) direction[i] = !direction[i]; // 如果速度為負，反轉方向。
-    
-    pwm_set[i] = abs(motors[i]); // 將速度的絕對值作為 PWM 設定值。
-
-    digitalWrite(motordirectionPin[i], direction[i]); // 設定馬達方向引腳。
-    PWM_Out(motorpwmPin[i], pwm_set[i]); // 輸出 PWM 信號。
-  }
-}
-
-void PWM_Out(uint8_t PWM_Pin, int8_t DutyCycle) { // PWM 輸出函數。
-  uint32_t currentTime_us = micros(); // 獲取當前時間（微秒）。
-  int highTime = (period/100) * DutyCycle; // 計算高電平時間。
-
-  if ((currentTime_us - previousTime_us) <= (unsigned long)highTime) { // 如果當前時間減去上次時間小於等於高電平時間。
-    digitalWrite(PWM_Pin, HIGH); // 設定引腳為高電平。
-  } else { // 否則。
-    digitalWrite(PWM_Pin, LOW); // 設定引腳為低電平。
-  }
-  if (currentTime_us - previousTime_us >= (unsigned long)period) { // 如果當前時間減去上次時間大於等於 PWM 週期。
-    previousTime_us = currentTime_us; // 更新上次時間。
-  }
 }
 
 // --- 序列埠命令處理函數 (僅用於測試) ---
@@ -432,7 +331,7 @@ void handleSerialCommand() {
 
       // 執行指令 (與 I2C 接收到的指令處理邏輯相同)
       controlBuzzer(receivedCommand.command_byte & 0b11);
-      Velocity_Controller(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+      motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
       myservo.write(receivedCommand.servo_angle);
 
       uint8_t error_code = getErrorCode(); // 獲取當前錯誤代碼
