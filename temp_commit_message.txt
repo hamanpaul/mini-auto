@@ -1,0 +1,27 @@
+feat: 整合熱成像特徵值與優化 I2C 通訊
+
+此提交引入了多項改進，主要集中於熱成像數據的處理、Arduino UNO 與 ESP32-S3 之間的 I2C 通訊優化，以及後端 API 和前端介面的更新。
+
+主要變更點：
+
+1.  **熱成像數據結構更新 (Arduino UNO & ESP32-S3 & Python 後端)**
+    *   將 `SensorData_t` 結構體中的熱成像數據從完整的 8x8 矩陣 (`thermal_matrix_flat`) 變更為僅傳輸關鍵特徵值：最高溫度 (`thermal_max_temp`)、最低溫度 (`thermal_min_temp`)、熱點 X 座標 (`thermal_hotspot_x`) 和熱點 Y 座標 (`thermal_hotspot_y`)。
+    *   此變更旨在減少 I2C 通訊的數據量，提高效率。
+    *   相應地，Python 後端的 `SyncRequest` 模型和 `_analyze_thermal_data` 函數也已更新，以適應新的熱成像特徵值。
+
+2.  **I2C 通訊優化 (Arduino UNO & ESP32-S3)**
+    *   在 `arduino_uno.ino` 和 `esp32_cam.ino` 中，引入了 `lastSentSensorData`、`lastReceivedCommand`、`lastReceivedSensorDataFromUNO`、`lastSentCommandDataToUNO` 和 `isFirstI2CComm` 等變數，用於追蹤數據變化。
+    *   現在，I2C 通訊的序列埠輸出將更加精簡，只有當數據實際發生變化時才會列印詳細日誌，否則只會列印單個字符 (`t` 或 `r`)，以減少序列埠的負載，便於除錯時觀察關鍵信息。
+    *   ESP32-S3 的 I2C SDA 和 SCL 引腳已從 21/22 更改為 47/48，並明確設定了 I2C 時脈速度為 100kHz。
+
+3.  **功能開關 (Arduino UNO)**
+    *   在 `arduino_uno.ino` 中新增了 `BUZZER_ENABLE` 和 `IR_IMG_ENABLE` 編譯宏，允許在編譯時選擇性地啟用或禁用蜂鳴器控制和紅外熱成像功能，增加了代碼的靈活性。
+
+4.  **前端介面改進 (HTML)**
+    *   `templates/index.html` 中新增了即時影像串流的 FPS (每秒幀數) 顯示。
+    *   前端 Vue.js 邏輯已更新，會定期從後端 `/camera/status` API 獲取 FPS 數據並顯示。
+
+5.  **後端攝影機串流處理器更新 (Python 後端)**
+    *   `src/py_rear/services/camera_stream_processor.py` 中新增了用於計算 FPS 的內部變數 (`_prev_frame_time`, `_frame_count`, `_fps`)。
+
+這些變更共同提升了系統的效能、通訊效率和可維護性。

@@ -32,8 +32,8 @@ const char* password = "035260089";
 
 // --- I2C Slave Configuration ---
 #define I2C_SLAVE_ADDRESS 0x53
-#define I2C_SDA_PIN 21
-#define I2C_SCL_PIN 22
+#define I2C_SDA_PIN 47
+#define I2C_SCL_PIN 48
 
 // --- I2C 數據結構定義 (與 UNO 保持一致) ---
 // 定義 UNO 感測器數據的結構體
@@ -41,8 +41,11 @@ typedef struct __attribute__((packed)) {
   uint8_t status_byte;      // 狀態位元組 (s)
   uint16_t voltage_mv;      // 電壓 (v)，單位毫伏
   int16_t ultrasonic_distance_cm; // 超音波距離 (u)，單位厘米，-1 表示無效
-  // 熱像儀數據 (t) - 8x8 矩陣，每個像素 2 位元組 (int16_t)
-  int16_t thermal_matrix_flat[64]; 
+  // 熱成像數據的特徵值
+  int16_t thermal_max_temp; // 最高溫度 * 100
+  int16_t thermal_min_temp; // 最低溫度 * 100
+  uint8_t thermal_hotspot_x; // 最熱點的 X 座標 (0-7)
+  uint8_t thermal_hotspot_y; // 最熱點的 Y 座標 (0-7)
 } SensorData_t;
 
 // 定義後端控制指令的結構體
@@ -61,6 +64,11 @@ const size_t COMMAND_DATA_SIZE = sizeof(CommandData_t);
 volatile SensorData_t receivedSensorData; // 用於儲存從 UNO 接收的感測器數據
 volatile CommandData_t currentCommandData; // 用於儲存要發送給 UNO 的控制指令
 volatile bool newSensorDataAvailable = false; // 標誌，指示是否有新感測器數據從 UNO 傳來
+
+// 用於 I2C 通訊除錯，追蹤數據變化
+SensorData_t lastReceivedSensorDataFromUNO = {};
+CommandData_t lastSentCommandDataToUNO = {};
+bool isFirstI2CComm = true;
 bool httpSyncTimerStarted = false; // 標誌，指示 HTTP 同步定時器是否已啟動
 bool cameraRegistered = false; // 標誌，指示攝影機是否已註冊
 
@@ -102,13 +110,21 @@ WebServer server(80);
 
 void receiveEvent(int howMany) {
   if (howMany == SENSOR_DATA_SIZE) {
-    Wire.readBytes((byte*)&receivedSensorData, SENSOR_DATA_SIZE);
+    byte buffer[SENSOR_DATA_SIZE];
+    Wire.readBytes(buffer, SENSOR_DATA_SIZE);
+
+    if (isFirstI2CComm || memcmp(buffer, &lastReceivedSensorDataFromUNO, SENSOR_DATA_SIZE) != 0) {
+      memcpy((void*)&receivedSensorData, buffer, SENSOR_DATA_SIZE);
+      memcpy(&lastReceivedSensorDataFromUNO, buffer, SENSOR_DATA_SIZE);
+      Serial.println("I2C RX <- Received updated sensor data from UNO.");
+    } else {
+      Serial.print("r"); // 數據未變，精簡輸出
+    }
     newSensorDataAvailable = true;
-    Serial.println("Received sensor data from UNO via I2C.");
+
   } else {
-    Serial.print("Received unexpected I2C data size: ");
+    Serial.print("I2C RX Error: Received unexpected data size: ");
     Serial.println(howMany);
-    // Consume the unexpected data to clear the buffer
     while(Wire.available()) {
       Wire.read();
     }
@@ -116,8 +132,15 @@ void receiveEvent(int howMany) {
 }
 
 void requestEvent() {
-  Wire.write((byte*)&currentCommandData, COMMAND_DATA_SIZE);
-  Serial.println("Sent command data to UNO via I2C.");
+  if (isFirstI2CComm || memcmp((void*)&currentCommandData, &lastSentCommandDataToUNO, COMMAND_DATA_SIZE) != 0) {
+    Wire.write((byte*)&currentCommandData, COMMAND_DATA_SIZE);
+    memcpy(&lastSentCommandDataToUNO, (void*)&currentCommandData, COMMAND_DATA_SIZE);
+    Serial.println("I2C TX -> Sent updated command data to UNO.");
+  } else {
+    Wire.write((byte*)&currentCommandData, COMMAND_DATA_SIZE); // 即使數據未變，也要回應主機的請求
+    Serial.print("t"); // 數據未變，精簡輸出
+  }
+  isFirstI2CComm = false; // 第一次通訊完成
 }
 
 void http_sync_callback(void* arg) {
@@ -162,14 +185,16 @@ void http_sync_callback(void* arg) {
   http.addHeader("Content-Type", "application/json");
 
   // 構建 JSON Payload
-  StaticJsonDocument<512> doc; // 調整大小以容納二維熱像儀矩陣
+  StaticJsonDocument<256> doc; // 調整大小以容納新的特徵值
 
   // 將 volatile packed 數據複製到臨時變數
-  uint8_t status_byte_temp = receivedSensorData.status_byte;
-  uint16_t voltage_mv_temp = receivedSensorData.voltage_mv;
-  int16_t ultrasonic_distance_cm_temp = receivedSensorData.ultrasonic_distance_cm;
-  int16_t thermal_matrix_flat_temp[64];
-  memcpy(thermal_matrix_flat_temp, (const void*)receivedSensorData.thermal_matrix_flat, sizeof(thermal_matrix_flat_temp));
+  uint8_t status_byte_temp = currentSensorDataCopy.status_byte;
+  uint16_t voltage_mv_temp = currentSensorDataCopy.voltage_mv;
+  int16_t ultrasonic_distance_cm_temp = currentSensorDataCopy.ultrasonic_distance_cm;
+  int16_t thermal_max_temp_temp = currentSensorDataCopy.thermal_max_temp;
+  int16_t thermal_min_temp_temp = currentSensorDataCopy.thermal_min_temp;
+  uint8_t thermal_hotspot_x_temp = currentSensorDataCopy.thermal_hotspot_x;
+  uint8_t thermal_hotspot_y_temp = currentSensorDataCopy.thermal_hotspot_y;
 
   doc["s"] = status_byte_temp;
   doc["v"] = voltage_mv_temp;
@@ -178,14 +203,11 @@ void http_sync_callback(void* arg) {
     doc["u"] = ultrasonic_distance_cm_temp;
   }
 
-  // 處理熱像儀矩陣 (8x8 二維陣列)
-  JsonArray thermal_matrix_json = doc.createNestedArray("t");
-  for (int r = 0; r < 8; r++) {
-    JsonArray row_array = thermal_matrix_json.createNestedArray();
-    for (int c = 0; c < 8; c++) {
-      row_array.add(thermal_matrix_flat_temp[r * 8 + c]);
-    }
-  }
+  // 添加熱成像特徵值
+  doc["t_max"] = thermal_max_temp_temp;
+  doc["t_min"] = thermal_min_temp_temp;
+  doc["t_hx"] = thermal_hotspot_x_temp;
+  doc["t_hy"] = thermal_hotspot_y_temp;
 
   String requestBody;
   serializeJson(doc, requestBody);
@@ -458,10 +480,10 @@ void setup() {
 #endif
 
   // Initialize I2C as slave
-  Wire.begin(I2C_SLAVE_ADDRESS, I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.begin(I2C_SLAVE_ADDRESS, I2C_SDA_PIN, I2C_SCL_PIN, 100000U);
   Wire.onReceive(receiveEvent); // 註冊接收事件回調
   Wire.onRequest(requestEvent); // 註冊請求事件回調
-  Serial.println("I2C Slave initialized.");
+  Serial.println("I2C Slave initialized on SDA=47, SCL=48 at 100kHz.");
 
   // 初始化命令數據為停止狀態
   currentCommandData.command_byte = 0;
