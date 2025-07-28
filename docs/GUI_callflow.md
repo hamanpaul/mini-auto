@@ -237,8 +237,9 @@ void Velocity_Controller(uint16_t angle, uint8_t velocity, int8_t rot) {
   
   Motors_Set(velocity_0, velocity_1, velocity_2, velocity_3);
 }
+```
 
-
+### 5. 流程圖
 ``` mermaid 
 flowchart TD
     %% 前端 GUI
@@ -283,4 +284,5 @@ flowchart TD
     Sync_Loop --> API_Sync
     Arduino --> UDP_Discover
     Arduino --> Sync_Loop
+
 ```
