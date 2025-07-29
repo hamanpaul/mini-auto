@@ -150,6 +150,16 @@ class CameraStreamProcessor:
                         # 可選：在原始影像幀上繪製輪廓以進行視覺化。
                         # cv2.drawContours(frame[roi_start_row:height, 0:width], [largest_contour], -1, (0, 255, 0), 2)
 
+                # FPS 計算
+                current_time = time.time()
+                if self._prev_frame_time != 0:
+                    time_diff = current_time - self._prev_frame_time
+                    if time_diff > 0:
+                        self._fps = 1.0 / time_diff
+                    else:
+                        self._fps = 0.0 # Avoid division by zero
+                self._prev_frame_time = current_time
+
                 with self._lock: # 使用鎖來保護對共享資料的訪問。
                     self._latest_processed_frame = frame # 儲存原始影像幀以供顯示。
                     self._latest_visual_analysis_results = { # 儲存視覺分析結果。
