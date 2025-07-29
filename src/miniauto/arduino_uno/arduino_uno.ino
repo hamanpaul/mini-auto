@@ -9,7 +9,7 @@
 
 // --- 常數定義 ---
 #define SERIAL_TEST_MODE 0 // 設定為 1 啟用 Serial 測試模式，0 禁用
-#define BUZZER_ENABLE 0
+#define BUZZER_ENABLE 1
 #define IR_IMG_ENABLE 1
 #define I2C_ESP32_ENABLE 1
 
