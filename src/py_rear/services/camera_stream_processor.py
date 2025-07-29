@@ -201,6 +201,11 @@ class CameraStreamProcessor:
     def is_running(self):
         return self._running # 返回 _running 標誌的當前狀態。
 
+    # 獲取當前 FPS 的函數。
+    def get_fps(self):
+        with self._lock:
+            return self._fps
+
 # 範例用法（用於獨立測試此模組）。
 if __name__ == "__main__":
     # 這部分將被移除或修改，因為 main.py 將管理實例。
