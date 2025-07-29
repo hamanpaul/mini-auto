@@ -229,6 +229,7 @@ void syncWithServer() { // 與 ESP32 進行數據同步
   mySensorData.status_byte = 0;
   mySensorData.status_byte |= getBatteryLevelCode();
   mySensorData.ultrasonic_distance_cm = ultrasound.GetDistance();
+  mySensorData.voltage_mv = g_current_voltage_mv; // 新增：將電壓值賦給 mySensorData
 
 #if IR_IMG_ENABLE
   bool include_thermal = false;

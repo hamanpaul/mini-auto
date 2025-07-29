@@ -299,5 +299,6 @@ def _analyze_thermal_data(thermal_max_temp: Optional[int], thermal_min_temp: Opt
         "min_temp": min_temp_c,
         "hotspot_x": thermal_hotspot_x,
         "hotspot_y": thermal_hotspot_y,
-        "hotspot_detected": hotspot_detected
+        "hotspot_detected": hotspot_detected,
+        "is_danger": hotspot_detected # 當 hotspot_detected 為 True 時，表示危險
     }

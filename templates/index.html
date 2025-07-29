@@ -170,9 +170,36 @@
         .log-level-warning { color: #ffcc00; }
         .log-level-error { color: #f00; }
         .log-level-debug { color: #00aaff; }
+
+        /* Thermal Danger Alert Styles */
+        .thermal-danger-alert {
+            background-color: #ff0000; /* Red background */
+            color: white;
+            font-weight: bold;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 5px;
+            text-align: center;
+            animation: blink-animation 1s infinite alternate; /* Blinking effect */
+        }
+
+        @keyframes blink-animation {
+            from { opacity: 1; }
+            to { opacity: 0.5; }
+        }
+
+        /* Background Blinking for Danger */
+        .blink-background {
+            animation: background-blink 0.5s infinite alternate;
+        }
+
+        @keyframes background-blink {
+            from { background-color: #f4f4f4; }
+            to { background-color: #ff0000; }
+        }
     </style>
 </head>
-<body>
+<body :class="{ 'blink-background': thermalDanger }">
 
     <div id="app" class="dashboard-container">
         <div class="left-column panel">
@@ -182,7 +209,7 @@
             </div>
             <div class="speed-slider-container">
                 <label for="speed-slider">Speed: {{ speedSliderValue }}</label>
-                <input type="range" id="speed-slider" min="0" max="255" v-model="speedSliderValue" @input="sendManualControl">
+                <input type="range" id="speed-slider" min="40" max="255" v-model="speedSliderValue" @input="sendManualControl">
             </div>
         </div>
 
@@ -193,10 +220,10 @@
                 <div v-if="!esp32CamIp">Camera IP not registered. Click button on the right.</div>
                 <div v-if="esp32CamIp && !streamUrl">Stream stopped. Press button below to start.</div>
             </div>
-            <button v-if="esp32CamIp" @click="toggleStream" style="margin-top: 10px; padding: 10px; font-size: 1em;">{{ streamButtonText }}</button>
             <div class="seven-segment-display-placeholder">Distance: {{ ultrasonicDistance }} cm</div>
             <div class="seven-segment-display-placeholder">Battery: {{ batteryVoltage }} mV</div>
-            <div class="rgb-slider-placeholder">RGB Gradient Slider</div>
+            <div v-if="thermalDanger" class="thermal-danger-alert">危險！高溫！</div>
+            
         </div>
 
         <div class="right-column panel">
@@ -240,7 +267,8 @@
                 streamButtonText: 'Start Stream', // Text for the stream button
                 fpsValue: 0, // New property for FPS value
                 ultrasonicDistance: 0.0, // New property for ultrasonic distance
-                batteryVoltage: 'N/A' // New property for battery voltage
+                batteryVoltage: 'N/A', // New property for battery voltage
+                thermalDanger: false // New property for thermal danger alert
             },
             methods: {
                 async toggleStream() {
@@ -465,6 +493,13 @@
                         }
                         if (data.current_control_mode) {
                             this.currentControlMode = data.current_control_mode;
+                        }
+
+                        // Update thermal danger status
+                        if (data.thermal_analysis && typeof data.thermal_analysis.is_danger !== 'undefined') {
+                            this.thermalDanger = data.thermal_analysis.is_danger;
+                        } else {
+                            this.thermalDanger = false; // Default to false if no data
                         }
 
                         // Fetch camera status for FPS
