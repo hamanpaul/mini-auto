@@ -22,6 +22,7 @@ const int MANUAL_BACKEND_SERVER_PORT = 8000; // <<< CHANGE THIS TO YOUR BACKEND 
 #include "WiFi.h"
 #include "WebServer.h"
 #include "Wire.h"
+#include <VehicleData.h>
 #include <HTTPClient.h> // 用於發送 HTTP 請求到後端伺服器
 #include <ArduinoJson.h> // 用於處理 JSON 數據
 #include <AsyncUDP.h> // 用於監聽 UDP 廣播，發現後端伺服器 IP
@@ -35,26 +36,7 @@ const char* password = "035260089";
 #define I2C_SDA_PIN 47
 #define I2C_SCL_PIN 48
 
-// --- I2C 數據結構定義 (與 UNO 保持一致) ---
-// 定義 UNO 感測器數據的結構體
-typedef struct __attribute__((packed)) {
-  uint8_t status_byte;      // 狀態位元組 (s)
-  uint16_t voltage_mv;      // 電壓 (v)，單位毫伏
-  int16_t ultrasonic_distance_cm; // 超音波距離 (u)，單位厘米，-1 表示無效
-  // 熱成像數據的特徵值
-  int16_t thermal_max_temp; // 最高溫度 * 100
-  int16_t thermal_min_temp; // 最低溫度 * 100
-  uint8_t thermal_hotspot_x; // 最熱點的 X 座標 (0-7)
-  uint8_t thermal_hotspot_y; // 最熱點的 Y 座標 (0-7)
-} SensorData_t;
 
-// 定義後端控制指令的結構體
-typedef struct __attribute__((packed)) {
-  uint8_t command_byte;     // 命令位元組 (c)
-  int16_t motor_speed;      // 馬達速度 (m)
-  int16_t direction_angle;  // 方向角度 (d)
-  int16_t servo_angle;      // 舵機角度 (a)
-} CommandData_t;
 
 // 計算結構體大小
 const size_t SENSOR_DATA_SIZE = sizeof(SensorData_t);
@@ -64,6 +46,7 @@ const size_t COMMAND_DATA_SIZE = sizeof(CommandData_t);
 volatile SensorData_t receivedSensorData; // 用於儲存從 UNO 接收的感測器數據
 volatile CommandData_t currentCommandData; // 用於儲存要發送給 UNO 的控制指令
 volatile bool newSensorDataAvailable = false; // 標誌，指示是否有新感測器數據從 UNO 傳來
+String old_response = "";
 
 // 用於 I2C 通訊除錯，追蹤數據變化
 SensorData_t lastReceivedSensorDataFromUNO = {};
@@ -116,9 +99,6 @@ void receiveEvent(int howMany) {
     if (isFirstI2CComm || memcmp(buffer, &lastReceivedSensorDataFromUNO, SENSOR_DATA_SIZE) != 0) {
       memcpy((void*)&receivedSensorData, buffer, SENSOR_DATA_SIZE);
       memcpy(&lastReceivedSensorDataFromUNO, buffer, SENSOR_DATA_SIZE);
-      Serial.println("I2C RX <- Received updated sensor data from UNO.");
-    } else {
-      Serial.print("r"); // 數據未變，精簡輸出
     }
     newSensorDataAvailable = true;
 
@@ -138,7 +118,6 @@ void requestEvent() {
     Serial.println("I2C TX -> Sent updated command data to UNO.");
   } else {
     Wire.write((byte*)&currentCommandData, COMMAND_DATA_SIZE); // 即使數據未變，也要回應主機的請求
-    Serial.print("t"); // 數據未變，精簡輸出
   }
   isFirstI2CComm = false; // 第一次通訊完成
 }
@@ -149,10 +128,10 @@ void http_sync_callback(void* arg) {
   memcpy(&currentSensorDataCopy, (const void*)&receivedSensorData, sizeof(SensorData_t));
 
   // 檢查數據是否與上次發送的數據相同，如果相同且不是第一次同步，則跳過詳細日誌
-  if (!firstSync && memcmp(&currentSensorDataCopy, &lastSentSensorData, sizeof(SensorData_t)) == 0) {
-    Serial.print("^");
+ // if (!firstSync && memcmp(&currentSensorDataCopy, &lastSentSensorData, sizeof(SensorData_t)) == 0) {
+//    Serial.print("^");
  //   return;
-  }
+//  }
 
   // 更新 lastSentSensorData
   memcpy(&lastSentSensorData, &currentSensorDataCopy, sizeof(SensorData_t));
@@ -161,7 +140,6 @@ void http_sync_callback(void* arg) {
 #if HAS_UNO_I2C
   // 檢查是否有新的感測器數據可用
   if (!newSensorDataAvailable) {
-    Serial.print("*");
     return;
   }
 
@@ -177,9 +155,6 @@ void http_sync_callback(void* arg) {
 
   HTTPClient http;
   String serverPath = "http://" + backendServerIp + ":" + String(backendServerPort) + "/api/sync";
-
-  Serial.print("Sending HTTP POST to: ");
-  Serial.println(serverPath);
 
   http.begin(serverPath);
   http.addHeader("Content-Type", "application/json");
@@ -213,9 +188,7 @@ void http_sync_callback(void* arg) {
   serializeJson(doc, requestBody);
 
   // 根據數據是否變化來決定是否列印詳細的 Request Body
-  if (!firstSync && memcmp(&currentSensorDataCopy, &lastSentSensorData, sizeof(SensorData_t)) == 0) {
-    Serial.println("Sensor data unchanged. Skipping detailed request body log.");
-  } else {
+  if (firstSync || memcmp(&currentSensorDataCopy, &lastSentSensorData, sizeof(SensorData_t)) != 0) {
     Serial.print("Request Body: ");
     Serial.println(requestBody);
   }
@@ -223,9 +196,10 @@ void http_sync_callback(void* arg) {
   int httpResponseCode = http.POST(requestBody);
 
   if (httpResponseCode > 0) {
-    Serial.printf("HTTP Response code: %d\n", httpResponseCode);
     String response = http.getString();
-    Serial.println("HTTP Response: " + response);
+    if(response.compareTo(old_response) !=0 )
+      Serial.println("HTTP Response: " + response);
+      old_response = response;
 
     // 解析回應 JSON
     StaticJsonDocument<128> response_doc; // 根據 CommandData_t 的大小調整
@@ -236,7 +210,6 @@ void http_sync_callback(void* arg) {
       currentCommandData.motor_speed = response_doc["m"] | 0;
       currentCommandData.direction_angle = response_doc["d"] | 0;
       currentCommandData.servo_angle = response_doc["a"] | 0;
-      Serial.println("Updated command data from backend.");
     } else {
       Serial.print("Failed to parse JSON response: ");
       Serial.println(error.c_str());

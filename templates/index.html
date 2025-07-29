@@ -194,7 +194,8 @@
                 <div v-if="esp32CamIp && !streamUrl">Stream stopped. Press button below to start.</div>
             </div>
             <button v-if="esp32CamIp" @click="toggleStream" style="margin-top: 10px; padding: 10px; font-size: 1em;">{{ streamButtonText }}</button>
-            <div class="seven-segment-display-placeholder">Distance: 123.45 cm</div>
+            <div class="seven-segment-display-placeholder">Distance: {{ ultrasonicDistance }} cm</div>
+            <div class="seven-segment-display-placeholder">Battery: {{ batteryVoltage }} mV</div>
             <div class="rgb-slider-placeholder">RGB Gradient Slider</div>
         </div>
 
@@ -228,7 +229,7 @@
             data: {
                 motorSpeed: 0,
                 directionAngle: 0,
-                speedSliderValue: 150, // Default speed for keyboard control
+                speedSliderValue: 60, // Default speed for keyboard control
                 esp32CamIp: null,
                 latest_data: {},
                 latest_command: {},
@@ -237,7 +238,9 @@
                 activeKeys: {},
                 streamUrl: '', // To hold the dynamic stream URL
                 streamButtonText: 'Start Stream', // Text for the stream button
-                fpsValue: 0 // New property for FPS value
+                fpsValue: 0, // New property for FPS value
+                ultrasonicDistance: 0.0, // New property for ultrasonic distance
+                batteryVoltage: 'N/A' // New property for battery voltage
             },
             methods: {
                 async toggleStream() {
@@ -439,6 +442,13 @@
                         const data = await response.json();
                         this.latest_data = data.latest_data;
                         this.latest_command = data.latest_command;
+                        if (this.latest_data) {
+                            this.ultrasonicDistance = typeof this.latest_data.u !== 'undefined' ? this.latest_data.u : 'N/A';
+                            this.batteryVoltage = typeof this.latest_data.v !== 'undefined' ? this.latest_data.v : 'N/A';
+                        } else {
+                            this.ultrasonicDistance = 'N/A';
+                            this.batteryVoltage = 'N/A';
+                        }
                         if (data.esp32_cam_ip && !this.esp32CamIp) {
                             this.addLog(`fetchData: Backend has ESP32 IP (${data.esp32_cam_ip}), but frontend does not.`, 'gui', 'debug');
                             this.esp32CamIp = data.esp32_cam_ip;

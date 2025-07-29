@@ -47,8 +47,8 @@ async def get_camera_status():
     # 檢查 camera_processor 是否已初始化。如果為 None，則返回未初始化狀態。
     if camera_processor is None:
         return {"status": "not_initialized"}
-    # 根據 camera_processor 的運行狀態返回 "running" 或 "stopped"。
-    return {"status": "running" if camera_processor.is_running() else "stopped"}
+    # 根據 camera_processor 的運行狀態返回 "running" 或 "stopped"，並包含 FPS 資訊。
+    return {"status": "running" if camera_processor.is_running() else "stopped", "fps": camera_processor.get_fps()}
 
 # 定義一個 GET 請求的 API 端點：/camera/analysis，用於獲取最新的視覺分析結果。
 @router.get("/camera/analysis")
