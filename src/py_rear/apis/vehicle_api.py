@@ -97,10 +97,6 @@ async def sync_data(request: SyncRequest) -> SyncResponse:
         print(f"熱像儀分析: {latest_thermal_analysis_results}")
     print(f"--------------------------") # 列印分隔線。
 
-    # 如果同步請求中提供了手動控制欄位，則更新全域手動控制變數。
-    # 為了確保啟動時馬達停止，強制將手動控制速度和方向設定為 0
-    current_manual_motor_speed = 0
-    current_manual_direction_angle = 0
 
     if request.m is not None:
         current_manual_motor_speed = request.m

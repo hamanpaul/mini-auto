@@ -347,7 +347,6 @@
                     });
                 },
                 handleKeyDown(event) {
-                    this.addLog(`handleKeyDown triggered for key: ${event.key.toLowerCase()}`, 'gui', 'debug');
                     if (event.repeat) return; // Ignore key repeat
                     const key = event.key.toLowerCase();
                     if (['w', 'a', 's', 'd'].includes(key)) {
