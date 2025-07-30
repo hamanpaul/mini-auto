@@ -7,7 +7,7 @@ class MotorController {
 public:
   MotorController();
   void init();
-  void move(uint16_t angle, uint8_t velocity, int8_t rot);
+  void move(uint16_t angle, uint8_t velocity, int8_t rot_input);
   void move(char direction);
   void stop();
 

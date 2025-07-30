@@ -96,7 +96,9 @@ void Ultrasound::Color(uint8_t r1, uint8_t g1, uint8_t b1, uint8_t r2, uint8_t g
 u16 Ultrasound::GetDistance()
 {
   u16 distance;
-  wireReadDataArray(ULTRASOUND_I2C_ADDR, 0,(uint8_t *)&distance,2);
+  if (wireReadDataArray(ULTRASOUND_I2C_ADDR, 0, (uint8_t *)&distance, 2) != 2) {
+    return 0; // I2C讀取失敗，返回0
+  }
   return distance;
 }
 

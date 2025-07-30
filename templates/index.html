@@ -124,6 +124,12 @@
         .function-buttons-container button:hover {
             background-color: #0056b3;
         }
+        .btn-on {
+            background-color: #28a745 !important; /* Green */
+        }
+        .btn-off {
+            background-color: #6c757d !important; /* Gray */
+        }
         .reset-button {
             background-color: #ff6600; /* Orange for reset button */
             color: white;
@@ -230,8 +236,8 @@
             <h2>Function Buttons</h2>
             <div class="function-buttons-container">
                 <h3>Control Mode: {{ currentControlMode }}</h3>
+                <button @click="toggleAvoidance()" :class="{ 'btn-on': isAvoidanceOn, 'btn-off': !isAvoidanceOn }">Avoidance</button>
                 <button @click="setControlMode('manual')">Set Manual Mode</button>
-                <button @click="setControlMode('avoidance')">Set Avoidance Mode</button>
                 <button @click="setControlMode('autonomous')">Set Autonomous Mode</button>
                 <button @click="registerCamera('192.168.0.147')">Register Camera (192.168.0.147)</button>
             </div>
@@ -260,7 +266,8 @@
                 esp32CamIp: null,
                 latest_data: {},
                 latest_command: {},
-                currentControlMode: 'manual',
+                currentControlMode: 'avoidance',
+                isAvoidanceOn: true, // Default to ON
                 debugLogs: [],
                 activeKeys: {},
                 streamUrl: '', // To hold the dynamic stream URL
@@ -412,6 +419,11 @@
                         console.error('Error setting control mode:', error);
                     }
                 },
+                toggleAvoidance() {
+                    this.isAvoidanceOn = !this.isAvoidanceOn;
+                    const mode = this.isAvoidanceOn ? 'avoidance' : 'manual';
+                    this.setControlMode(mode);
+                },
                 async registerCamera(ip) {
                     try {
                         this.addLog(`Registering camera with IP: ${ip}`, 'gui', 'info');
@@ -522,6 +534,7 @@
             mounted() {
                 try {
                     this.addLog('Vue App mounting...', 'gui', 'debug');
+                    this.setControlMode('avoidance'); // Default to avoidance mode on
                     this.fetchData();
                     this.fetchBackendLogs();
                     setInterval(() => {

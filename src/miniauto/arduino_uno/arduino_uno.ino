@@ -22,7 +22,7 @@ const size_t COMMAND_DATA_SIZE = sizeof(CommandData_t);
 
 // --- 全域變數 ---
 SensorData_t mySensorData; // 用於儲存 UNO 自己的感測器數據
-CommandData_t receivedCommand; // 用於儲存從 ESP32 接收的控制指令
+CommandData_t receivedCommand = {0, 0, 0, 90, 0}; // 用於儲存從 ESP32 接收的控制指令，初始化為停止狀態
 
 // --- 引腳定義 ---
 const static uint8_t ledPin = 2; // 定義 RGB LED 的資料引腳。
@@ -310,7 +310,19 @@ void syncWithServer() { // 與 ESP32 進行數據同步
 
       // 執行指令
       controlBuzzer(receivedCommand.command_byte & 0b11);
-      motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+      
+      // 新增避障邏輯
+      if (receivedCommand.is_avoidance_enabled) {
+        uint16_t distance_mm = ultrasound.GetDistance();
+        if (distance_mm > 0 && distance_mm < 200) { // 距離在 1mm 到 200mm (20cm) 之間
+          motor.move(180, 100, 0); // 後退
+        } else {
+          motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+        }
+      } else {
+        motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+      }
+      
       uint8_t override_led_code = (receivedCommand.command_byte >> 2) & 0b11;
       float battery_percentage = getBatteryPercentage();
       uint8_t final_led_code = override_led_code != 0 ? override_led_code : getLedStatusCode(error_code, false, battery_percentage);
@@ -318,6 +330,7 @@ void syncWithServer() { // 與 ESP32 進行數據同步
     }
   } else {
     Serial.print(F("E")); // 錯誤
+    motor.stop(); // I2C 讀取失敗，強制馬達停止
   }
 #endif
   isFirstSync = false; // 第一次同步完成

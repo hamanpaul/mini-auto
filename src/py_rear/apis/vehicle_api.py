@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Body, Depends, Request # 導入 FastAPI 相關模組：APIRouter 用於定義路由，HTTPException 用於處理 HTTP 錯誤，Body 用於從請求體中獲取資料，Depends 用於依賴注入，Request 用於訪問請求物件。
+import time # 導入 time 模組，用於處理時間戳
 from fastapi import APIRouter, HTTPException, Body, Depends, Request # 導入 FastAPI 相關模組：APIRouter 用於定義路由，HTTPException 用於處理 HTTP 錯誤，Body 用於從請求體中獲取資料，Depends 用於依賴注入，Request 用於訪問請求物件。
 from pydantic import BaseModel # 導入 BaseModel，用於定義資料模型，實現資料驗證和序列化。
 from enum import Enum # 導入 Enum，用於創建枚舉類型。
@@ -39,6 +40,18 @@ latest_arduino_data: Optional[dict] = None # 最新從 Arduino 接收到的資�
 latest_command_sent: Optional[dict] = None # 最新發送給 Arduino 的命令。
 latest_esp32_cam_ip: Optional[str] = None # 最新註冊的 ESP32-CAM IP 位址。
 latest_thermal_analysis_results: Optional[dict] = None # 最新熱像儀分析結果。
+
+# 用於儲存被忽略的障礙物角度和時間戳
+# 每個元素: {'angle': float, 'ignore_until': float (timestamp)}
+global_obstacle_map = []
+
+# 輔助函式：將像素座標轉換為角度
+def _pixel_to_angle(pixel_coord: int, frame_dim: int, fov_degrees: float) -> float:
+    # 將像素座標正規化到 -1.0 到 1.0 的範圍 (中心為 0)
+    normalized_coord = (pixel_coord - (frame_dim / 2.0)) / (frame_dim / 2.0)
+    # 將正規化後的座標乘以 fov_degrees / 2，得到角度
+    return normalized_coord * (fov_degrees / 2.0)
+
 # camera_processor_instance 將從 apis.camera 模組中引用，因為它在 main.py 中被初始化。
 
 # 定義資料模型：SyncRequest，用於同步請求的資料結構。
@@ -65,6 +78,7 @@ class SyncResponse(BaseModel):
     m: int = 0  # 馬達速度 (motor_speed)
     d: int = 0  # 方向角度 (direction_angle)
     a: int = 0  # 舵機角度 (servo_angle)
+    is_avoidance_enabled: int = 0 # 避障啟用旗標
 
 
 # 定義一個 POST 請求的 API 端點：/api/sync，用於同步資料。
@@ -84,6 +98,10 @@ async def sync_data(request: SyncRequest) -> SyncResponse:
     print(f"--------------------------") # 列印分隔線。
 
     # 如果同步請求中提供了手動控制欄位，則更新全域手動控制變數。
+    # 為了確保啟動時馬達停止，強制將手動控制速度和方向設定為 0
+    current_manual_motor_speed = 0
+    current_manual_direction_angle = 0
+
     if request.m is not None:
         current_manual_motor_speed = request.m
     if request.d is not None:
@@ -94,17 +112,25 @@ async def sync_data(request: SyncRequest) -> SyncResponse:
         current_manual_command_byte = request.c
 
     # 根據當前的控制模式生成命令。
-    if current_control_mode == ControlMode.MANUAL:
-        response_commands = _generate_manual_commands()
-    elif current_control_mode == ControlMode.AVOIDANCE:
-        response_commands = _generate_avoidance_commands()
-    elif current_control_mode == ControlMode.AUTONOMOUS:
+    if current_control_mode == ControlMode.AUTONOMOUS:
         response_commands = _generate_autonomous_commands()
     else:
-        response_commands = SyncResponse() # 預設為停止命令。
+        is_avoidance_enabled = 1 if current_control_mode == ControlMode.AVOIDANCE else 0
+        response_commands = SyncResponse(
+            c=current_manual_command_byte,
+            m=current_manual_motor_speed,
+            d=current_manual_direction_angle,
+            a=current_manual_servo_angle,
+            is_avoidance_enabled=is_avoidance_enabled
+        )
+
+    # 如果熱像儀偵測到危險，強制設定 command_byte 觸發蜂鳴器
+    if latest_thermal_analysis_results and latest_thermal_analysis_results.get("is_danger"):
+        response_commands.c = 3 # 3 代表連續蜂鳴
 
     latest_command_sent = response_commands.dict() # 將生成的命令轉換為字典並儲存為最新發送的命令。
     return response_commands # 返回生成的命令。
+
 
 # 定義 /api/manual_control 請求的數據模型。
 class ManualControlRequest(BaseModel):
@@ -190,94 +216,110 @@ def _generate_manual_commands() -> SyncResponse:
         a=current_manual_servo_angle # 舵機角度。
     )
 
-# 生成避障命令。
-def _generate_avoidance_commands() -> SyncResponse:
-
-    # 優先讀取超音波感測器數據。
-    if latest_arduino_data and latest_arduino_data.get("u") is not None: # 如果有最新的 Arduino 資料且包含超音波距離。
-        distance_cm = latest_arduino_data.get("u") # 獲取超音波距離。
-        if distance_cm < 20: # 如果距離小於 20 厘米，表示有障礙物。
-            print(f"  - 超音波障礙物偵測到 ({distance_cm} 厘米)。正在後退。") # 列印偵測到障礙物的訊息。
-            return SyncResponse(c=0, m=100, d=180, a=90) # 返回後退命令。
-
-    # 如果沒有超音波數據或距離足夠，則執行視覺避障。
-    return _generate_autonomous_commands() # 呼叫自動駕駛命令生成函數。
-
 # 生成自動駕駛命令。
 def _generate_autonomous_commands() -> SyncResponse:
-    print("執行自動駕駛邏輯...") # 列印執行自動駕駛邏輯的訊息。
+    global global_obstacle_map
 
-    # --- 優先級 1: 超音波感測器檢查 ---
-    if latest_arduino_data and latest_arduino_data.get("u") is not None: # 如果有最新的 Arduino 資料且包含超音波距離。
-        distance_cm = latest_arduino_data.get("u") # 獲取超音波距離。
-        if distance_cm < 20: # 如果距離小於 20 厘米，表示有障礙物。
-            print(f"  - 超音波障礙物偵測到 ({distance_cm} 厘米)。正在後退。") # 列印偵測到障礙物的訊息。
-            return SyncResponse(c=0, m=100, d=180, a=90) # 返回後退命令。
-    
-    # --- 預設命令: 停止 ---
-    motor_speed = 0 # 馬達速度設為 0 (停止)。
-    direction_angle = 0 # 方向角度設為 0。
-    command_byte = 0 # 命令位元組設為 0。
-    servo_angle = 90 # 舵機角度設為 90 (置中)。
+    motor_speed = 0
+    direction_angle = 0
+    command_byte = 0
+    servo_angle = 90 # 置中
 
-    # --- 獲取視覺分析結果 ---
-    visual_analysis = None # 初始化視覺分析結果為 None。
-    if apis_camera.camera_processor and apis_camera.camera_processor.is_running(): # 如果 camera_processor 存在且正在運行。
-        # 第三個元素 [2] 包含分析結果。
+    current_time = time.time()
+
+    # 1. 清理 global_obstacle_map：移除所有過期的障礙物
+    global_obstacle_map[:] = [
+        item for item in global_obstacle_map if item['ignore_until'] > current_time
+    ]
+    add_backend_log(f"清理後障礙物地圖: {global_obstacle_map}", level="DEBUG")
+
+    # 2. 獲取感測器數據並轉換為角度
+    thermal_angle = None
+    if latest_thermal_analysis_results and latest_thermal_analysis_results.get("hotspot_detected"):
+        thermal_hotspot_x = latest_thermal_analysis_results.get("hotspot_x")
+        # 熱像儀是 8x8 像素，視角 60 度
+        thermal_angle = _pixel_to_angle(thermal_hotspot_x, 8, 60)
+        add_backend_log(f"熱源角度: {thermal_angle:.2f} 度", level="DEBUG")
+
+    visual_obstacle_angle = None
+    obstacle_detected_by_vision = False
+    obstacle_area_ratio = 0.0
+
+    visual_analysis = None
+    if apis_camera.camera_processor and apis_camera.camera_processor.is_running():
         visual_analysis = apis_camera.camera_processor.get_latest_frame()[2]
 
-    if not visual_analysis: # 如果沒有視覺分析結果。
-        add_backend_log("  - 視覺分析不可用。正在停止。", level="DEBUG") # 添加日誌訊息。
-        return SyncResponse(c=command_byte, m=motor_speed, d=direction_angle, a=servo_angle) # 返回停止命令。
+    if visual_analysis:
+        obstacle_detected_by_vision = visual_analysis.get("obstacle_detected", False)
+        if obstacle_detected_by_vision:
+            obstacle_center_x = visual_analysis.get("obstacle_center_x", -1)
+            obstacle_area_ratio = visual_analysis.get("obstacle_area_ratio", 0.0)
+            # 攝影機解析度 480x320 (假設)，視角 62 度
+            visual_obstacle_angle = _pixel_to_angle(obstacle_center_x, 480, 62)
+            add_backend_log(f"視覺障礙物角度: {visual_obstacle_angle:.2f} 度, 面積: {obstacle_area_ratio:.2f}", level="DEBUG")
 
-    add_backend_log(f"  - 視覺分析: {visual_analysis}", level="DEBUG") # 添加日誌訊息。
+    # 3. 決策優先級：即時避障 (最高優先)
+    if obstacle_detected_by_vision:
+        add_backend_log("偵測到視覺障礙物，執行避障。", level="INFO")
+        # 將障礙物加入 global_obstacle_map
+        # 忽略時間設定為 10 秒，給車輛足夠時間繞開
+        ignore_until_timestamp = current_time + 10 
+        global_obstacle_map.append({
+            'angle': visual_obstacle_angle,
+            'ignore_until': ignore_until_timestamp
+        })
+        add_backend_log(f"障礙物 {visual_obstacle_angle:.2f} 度已加入忽略列表，直到 {ignore_until_timestamp:.0f}", level="DEBUG")
 
-    # --- 決策邏輯 ---
-    obstacle_detected = visual_analysis.get("obstacle_detected", False) # 獲取是否偵測到障礙物。
-    
-    if obstacle_detected: # 如果偵測到障礙物。
-        obstacle_center_x = visual_analysis.get("obstacle_center_x", -1) # 獲取障礙物中心 X 座標。
-        obstacle_area_ratio = visual_analysis.get("obstacle_area_ratio", 0.0) # 獲取障礙物面積比例。
+        if obstacle_area_ratio > 0.5: # 障礙物非常大（靠近），因此後退
+            add_backend_log("動作: 障礙物太近！正在後退。", level="INFO")
+            motor_speed = 100
+            direction_angle = 180 # 後退
+        else: # 嘗試繞行
+            # 判斷障礙物在左還是右，然後往反方向繞行
+            if visual_obstacle_angle > 0: # 障礙物在右側，向左繞行
+                add_backend_log("動作: 障礙物在右側。正在向左繞行。", level="INFO")
+                motor_speed = 80 # 繞行速度
+                direction_angle = 270 # 向左轉
+            else: # 障礙物在左側，向右繞行
+                add_backend_log("動作: 障礙物在左側。正在向右繞行。", level="INFO")
+                motor_speed = 80 # 繞行速度
+                direction_angle = 90 # 向右轉
         
-        # 由於相機解析度已調整為 QQVGA (160x120)，因此將幀寬度調整為 160。
-        # 這個值可能需要根據實際相機解析度進行微調。
-        frame_width = 480 # 幀寬度。
-        turn_threshold = frame_width / 3 # 轉向閾值，將幀分為 3 個區域。
+        return SyncResponse(c=command_byte, m=motor_speed, d=direction_angle, a=servo_angle, is_avoidance_enabled=0)
 
-        add_backend_log(f"  - 障礙物偵測到 (中心 X: {obstacle_center_x}, 面積: {obstacle_area_ratio})", level="DEBUG") # 添加日誌訊息。
+    # 4. 決策優先級：熱源追蹤
+    if thermal_angle is not None:
+        # 檢查熱源是否在 global_obstacle_map 中被忽略
+        is_thermal_ignored = False
+        for item in global_obstacle_map:
+            # 如果熱源角度與被忽略的障礙物角度非常接近 (例如，角度差小於 15 度)
+            if abs(thermal_angle - item['angle']) < 15: 
+                is_thermal_ignored = True
+                add_backend_log(f"熱源 {thermal_angle:.2f} 度被忽略 (與障礙物 {item['angle']:.2f} 度衝突)。", level="INFO")
+                break
+        
+        if not is_thermal_ignored:
+            add_backend_log(f"動作: 追蹤熱源 {thermal_angle:.2f} 度。", level="INFO")
+            motor_speed = 45 # 巡航速度
+            # 根據熱源角度調整方向
+            if thermal_angle > 5: # 熱源在右側，向右轉
+                direction_angle = 90 
+            elif thermal_angle < -5: # 熱源在左側，向左轉
+                direction_angle = 270
+            else: # 熱源在正前方，前進
+                direction_angle = 0
+            
+            return SyncResponse(c=command_byte, m=motor_speed, d=direction_angle, a=servo_angle, is_avoidance_enabled=0)
 
-        # 優先級 1: 障礙物非常大（靠近），因此後退。
-        if obstacle_area_ratio > 0.5:
-            add_backend_log("  - 動作: 障礙物太近！正在後退。", level="DEBUG") # 添加日誌訊息。
-            motor_speed = 100 # 調整速度。
-            direction_angle = 180 # 後退。
-        # 優先級 2: 障礙物在右側，因此向左轉。
-        elif obstacle_center_x > (frame_width - turn_threshold):
-            add_backend_log("  - 動作: 障礙物在右側。正在向左轉。", level="DEBUG") # 添加日誌訊息。
-            motor_speed = 120 # 調整速度。
-            direction_angle = 270 # 向左轉。
-        # 優先級 3: 障礙物在左側，因此向右轉。
-        elif obstacle_center_x < turn_threshold:
-            add_backend_log("  - 動作: 障礙物在左側。正在向右轉。", level="DEBUG") # 添加日誌訊息。
-            motor_speed = 120 # 調整速度。
-            direction_angle = 90 # 向右轉。
-        # 優先級 4: 障礙物在中間，緩慢後退。
-        else:
-            add_backend_log("  - 動作: 障礙物在中間。正在緩慢後退。", level="DEBUG") # 添加日誌訊息。
-            motor_speed = 80
-            direction_angle = 180 # 後退。
-    else:
-        # --- 未偵測到障礙物: 前進 ---
-        add_backend_log("  - 未偵測到障礙物。正在前進。", level="DEBUG") # 添加日誌訊息。
-        motor_speed = 150 # 巡航速度。
-        direction_angle = 0 # 前進。
+    # 5. 決策優先級：自由巡航 (無目標或目標被擋)
+    add_backend_log("動作: 無熱源或熱源被忽略，執行自由巡航。", level="INFO")
+    motor_speed = 30 # 巡航速度
+    direction_angle = 270 # 緩慢原地旋轉 (向左) 尋找目標
 
-    return SyncResponse(
-        c=command_byte, # 命令位元組。
-        m=motor_speed, # 馬達速度。
-        d=direction_angle, # 方向角度。
-        a=servo_angle # 舵機角度。
-    )
+    return SyncResponse(c=command_byte, m=motor_speed, d=direction_angle, a=servo_angle, is_avoidance_enabled=0)
+
+
+
 
 # 分析熱像儀資料。
 def _analyze_thermal_data(thermal_max_temp: Optional[int], thermal_min_temp: Optional[int], thermal_hotspot_x: Optional[int], thermal_hotspot_y: Optional[int]) -> dict[str, Any]:
