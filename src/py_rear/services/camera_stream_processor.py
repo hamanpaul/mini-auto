@@ -19,6 +19,10 @@ class CameraStreamProcessor:
         self._prev_frame_time = 0 # 用於計算 FPS 的前一幀時間。
         self._frame_count = 0 # 用於計算 FPS 的幀計數。
         self._fps = 0.0 # 儲存計算出的 FPS。
+        self.frame_width = 0 # 新增：影像幀寬度
+        self.frame_height = 0 # 新增：影像幀高度
+        self._frame_analysis_counter = 0 # 新增：幀分析計數器
+        self._analysis_skip_frames = 5 # 新增：分析跳過幀數
 
     # 更新影像串流來源的函數。
     def update_stream_source(self, esp32_cam_ip: str):
@@ -58,6 +62,11 @@ class CameraStreamProcessor:
             print(f"錯誤: 無法打開視訊串流: {self.stream_url}")
             self._running = False
             return
+
+        # 獲取實際的幀寬度和高度
+        self.frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        print(f"串流解析度: {self.frame_width}x{self.frame_height}")
 
         try:
             while self._running: # 迴圈運行，直到 _running 標誌變為 False。
@@ -101,6 +110,15 @@ class CameraStreamProcessor:
         """
         try:
             if frame is not None: # 確保影像幀不為空。
+                # 影像分析跳過邏輯
+                self._frame_analysis_counter += 1
+                if self._frame_analysis_counter % self._analysis_skip_frames != 0:
+                    # 如果不進行分析，仍然更新 FPS 和儲存原始幀
+                    with self._lock:
+                        self._latest_processed_frame = frame
+                        self._latest_visual_analysis_results = self._latest_visual_analysis_results # 保持上次的分析結果
+                    return
+
                 # --- 您的 OpenCV 影像分析邏輯在這裡 ---
                 # 本地、低資源的障礙物偵測：亮度閾值化 + 輪廓偵測。
                 
@@ -137,8 +155,10 @@ class CameraStreamProcessor:
                     area = cv2.contourArea(largest_contour) # 計算最大輪廓的面積。
                     
                     # 根據面積過濾（避免小雜訊）和位置（確保是相關的障礙物）。
-                    # 根據相機視角和預期障礙物大小調整 min_area_threshold。
-                    min_area_threshold = 1200 # 範例：根據新的解析度調整此值，可能需要進一步測試和微調。
+                    # 動態計算 min_area_threshold，基於 ROI 總面積的百分比
+                    # 例如，如果障礙物面積佔 ROI 總面積的 0.5% 就認為是障礙物
+                    min_area_percentage = 0.005 # 0.5%
+                    min_area_threshold = int(roi.shape[0] * roi.shape[1] * min_area_percentage)
                     if area > min_area_threshold: # 如果面積大於最小閾值。
                         obstacle_detected = True # 設置障礙物偵測標誌為 True。
                         M = cv2.moments(largest_contour) # 計算輪廓的矩。

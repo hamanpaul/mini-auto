@@ -8,7 +8,7 @@
 
 
 // --- 常數定義 ---
-#define SERIAL_TEST_MODE 0 // 設定為 1 啟用 Serial 測試模式，0 禁用
+#define SERIAL_TEST_MODE 1 // 設定為 1 啟用 Serial 測試模式，0 禁用
 #define BUZZER_ENABLE 1
 #define IR_IMG_ENABLE 1
 #define I2C_ESP32_ENABLE 1
@@ -163,15 +163,13 @@ void controlBuzzer(uint8_t buzzer_code) { // 控制蜂鳴器。
       }
       break;
     case 3: // 連續蜂鳴 (切換)。
-      if (currentTime - lastBuzzerActionTime >= CONTINUOUS_BEEP_INTERVAL / 2) { // 如果距離上次動作時間超過連續蜂鳴間隔的一半。
-        if (buzzerState) { // 如果蜂鳴器正在發聲。
-          noTone(buzzerPin); // 停止發聲。
-        } else { // 如果蜂鳴器未發聲。
-          tone(buzzerPin, 1000); // 發出 1000 Hz 的聲音。
-        }
-        buzzerState = !buzzerState; // 切換蜂鳴器狀態。
-        lastBuzzerActionTime = currentTime; // 更新上次動作時間。
+      // Instead of toggling tone/noTone, we'll make short beeps
+      if (currentTime - lastBuzzerActionTime >= CONTINUOUS_BEEP_INTERVAL) { // Trigger a new beep cycle
+        tone(buzzerPin, 1000, SHORT_BEEP_DURATION); // Beep for a short duration
+        lastBuzzerActionTime = currentTime; // Reset timer for next beep
       }
+      // No need for noTone() here, as tone() with duration handles it.
+      // The interval ensures a pause between beeps.
       break;
     default:
       noTone(buzzerPin); // 預設情況下停止發聲。
@@ -317,10 +315,10 @@ void syncWithServer() { // 與 ESP32 進行數據同步
         if (distance_mm > 0 && distance_mm < 200) { // 距離在 1mm 到 200mm (20cm) 之間
           motor.move(180, 100, 0); // 後退
         } else {
-          motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+          motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, receivedCommand.rotation_speed);
         }
       } else {
-        motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+        motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, receivedCommand.rotation_speed);
       }
       
       uint8_t override_led_code = (receivedCommand.command_byte >> 2) & 0b11;

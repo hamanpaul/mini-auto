@@ -10,6 +10,7 @@ typedef struct __attribute__((packed)) {
   int8_t motor_speed;      // 馬達速度 (m)
   int16_t direction_angle;  // 方向角度 (d)
   int16_t servo_angle;      // 舵機角度 (a)
+  int8_t rotation_speed;   // 新增：旋轉速度 (r)
   uint8_t is_avoidance_enabled; // 避障啟用旗標
 } CommandData_t;
 

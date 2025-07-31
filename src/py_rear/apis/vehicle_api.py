@@ -34,6 +34,7 @@ current_manual_motor_speed: int = 0 # 馬達速度。
 current_manual_direction_angle: int = 0 # 方向角度。
 current_manual_servo_angle: int = 0 # 舵機角度。
 current_manual_command_byte: int = 0 # 命令位元組。
+current_manual_rotation_speed: int = 0 # 新增：旋轉速度。
 
 # 用於儲存最新接收資料和發送命令的全域變數。
 latest_arduino_data: Optional[dict] = None # 最新從 Arduino 接收到的資料。
@@ -78,6 +79,7 @@ class SyncResponse(BaseModel):
     m: int = 0  # 馬達速度 (motor_speed)
     d: int = 0  # 方向角度 (direction_angle)
     a: int = 0  # 舵機角度 (servo_angle)
+    r: int = 0  # 新增：旋轉速度 (rotation_speed)
     is_avoidance_enabled: int = 0 # 避障啟用旗標
 
 
@@ -117,6 +119,7 @@ async def sync_data(request: SyncRequest) -> SyncResponse:
             m=current_manual_motor_speed,
             d=current_manual_direction_angle,
             a=current_manual_servo_angle,
+            r=current_manual_rotation_speed,
             is_avoidance_enabled=is_avoidance_enabled
         )
 
@@ -134,16 +137,18 @@ class ManualControlRequest(BaseModel):
     d: int  # 方向角度 (direction_angle)
     a: int  # 舵機角度 (servo_angle)
     c: int  # 命令位元組 (command_byte)
+    r: int  # 新增：旋轉速度 (rotation_speed)
 
 # 定義一個 POST 請求的 API 端點：/api/manual_control，用於手動控制車輛。
 @router.post("/api/manual_control")
 async def manual_control(request: ManualControlRequest):
-    global current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte
+    global current_manual_motor_speed, current_manual_direction_angle, current_manual_servo_angle, current_manual_command_byte, current_manual_rotation_speed
 
     current_manual_motor_speed = request.m # 更新馬達速度。
     current_manual_direction_angle = request.d # 更新方向角度。
     current_manual_servo_angle = request.a # 更新舵機角度。
     current_manual_command_byte = request.c # 更新命令位元組。
+    current_manual_rotation_speed = request.r # 新增：更新旋轉速度。
     print(f"\n--- 接收到手動控制命令 ---") # 列印接收到的手動控制命令標題。
     print(f"馬達速度: {current_manual_motor_speed}") # 列印馬達速度。
     print(f"方向角度: {current_manual_direction_angle}") # 列印方向角度。

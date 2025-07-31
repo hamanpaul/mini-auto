@@ -211,6 +211,7 @@ void http_sync_callback(void* arg) {
       currentCommandData.motor_speed = response_doc["m"] | 0;
       currentCommandData.direction_angle = response_doc["d"] | 0;
       currentCommandData.servo_angle = response_doc["a"] | 0;
+      currentCommandData.rotation_speed = response_doc["r"] | 0; // 新增：解析旋轉速度
     } else {
       Serial.print("Failed to parse JSON response: ");
       Serial.println(error.c_str());
@@ -242,8 +243,8 @@ void http_sync_callback(void* arg) {
   config.pin_reset = CAM_PIN_RESET;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_RGB565; // 改回 RGB565，因為 RGB888 不被支援
-  config.frame_size = FRAMESIZE_HVGA; // 設定影像解析度為 HVGA (480x320)
-  config.jpeg_quality = 60; // 設定 JPEG 影像品質為 60 (較高)
+  config.frame_size = FRAMESIZE_QVGA; // 設定影像解析度為 HVGA (480x320)
+  config.jpeg_quality = 40; // 設定 JPEG 影像品質為 60 (較高)
   config.fb_count = 2;
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location = CAMERA_FB_IN_PSRAM;
