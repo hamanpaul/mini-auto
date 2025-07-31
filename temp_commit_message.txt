@@ -1,33 +1,30 @@
-feat: 強化自主模式與避障功能，優化通報機制及運動控制精準度
+feat(核心功能): 全面優化車輛移動控制與自動駕駛模式
 
-本次提交針對 Miniauto 小車的自主模式行為、避障功能、警報通報機制及基礎運動控制精準度進行了全面強化與優化。
+### **變更摘要**
+本次提交專注於解決車輛在手動與自動模式下的核心問題，並提升了系統的整體穩定性與反應速度。
 
-主要變更點如下：
+### **詳細變更**
+- **韌體 (Arduino & ESP32)**
+  - `arduino_uno.ino`:
+    - 調整了主控制迴圈的邏輯，優化了感測器數據的讀取與處理流程。
+    - 改善了自動避障模式的演算法，使其反應更為靈敏、路徑決策更佳。
+  - `esp32_cam.ino`:
+    - 調整影像傳輸參數，降低串流延遲，提升即時影像品質。
+  - `MotorController/`:
+    - 修正 `MotorController.cpp` 中導致馬達輸出不穩定的計算錯誤。
+    - 在 `VehicleData.h` 中新增了狀態旗標，用於更精確地同步車輛狀態。
 
-1.  **Arduino 韌體優化**：
-    *   **超音波感測器健壯性**：修改 `Ultrasound.cpp`，確保在 I2C 讀取失敗時回傳 0，提高數據可靠性。
-    *   **I2C 指令接收健壯性**：在 `arduino_uno.ino` 中，明確初始化 `receivedCommand` 為停止狀態，並在 `syncWithServer()` 中加強 I2C 讀取判斷，若讀取失敗則強制馬達停止，解決小車開機自動移動問題。
-    *   **馬達速度控制精準化**：修改 `MotorController.cpp`，調整 `move` 函式中的速度下限邏輯，確保當指令速度為 0 時馬達能確實停止。
-    *   **運動控制參數修正**：修改 `MotorController.h` 和 `MotorController.cpp`，將 `move` 函式中的 `rot` 參數更名為 `rot_input`，並移除其內部對 `rot` 值的硬編碼覆蓋，使旋轉指令能被精確控制。
-    *   **GUI WASD 鍵功能調整**：修改 `MotorController.cpp`，將 `a` 和 `d` 鍵的功能從平移改為原地旋轉，提供更直觀的控制體驗。
+- **後端 (Python)**
+  - `apis/vehicle_api.py`:
+    - 更新 API 端點以匹配韌體的變更，特別是手動控制與模式切換的邏輯。
+  - `services/camera_stream_processor.py`:
+    - 增強了影像處理服務，以適應來自 ESP32 的新影像格式，並改善了物件偵測的初步邏輯。
 
-2.  **後端控制邏輯重構**：
-    *   **`AVOIDANCE` 模式**：將其轉變為 Arduino 端超音波避障功能的開關，透過 `is_avoidance_enabled` 旗標傳送給 Arduino。
-    *   **`AUTONOMOUS` 模式**：
-        *   重新啟用並強化視覺分析與自動駕駛邏輯。
-        *   實現熱源追蹤與智慧避障的並存：引入 `global_obstacle_map` 記錄被忽略的障礙物方向（具備時間性移除機制，實現「巡場」概念），並新增 `_pixel_to_angle` 輔助函式將感測器像素座標轉換為角度，提高決策精準度。
-        *   優先處理即時視覺避障，並在避障時將障礙物加入忽略列表。
-        *   在無障礙物或熱源被忽略時，執行自由巡航。
-        *   將 `AUTONOMOUS` 模式下的預設巡航速度調整為 45，以適應影像處理速度。
-    *   **啟動時馬達停止**：在 `vehicle_api.py` 的 `sync_data` 函式中，強制將 `current_manual_motor_speed` 和 `current_manual_direction_angle` 初始化為 0，確保後端啟動時發送停止指令。
+- **前端 (HTML)**
+  - `templates/index.html`:
+    - 更新了前端控制介面，新增了模式狀態顯示，並使手動控制按鈕反應更即時。
 
-3.  **警報通報機制優化**：
-    *   **本地蜂鳴器警報**：修改 `vehicle_api.py`，確保當熱像儀偵測到危險時，強制設定 `command_byte` 為 3 (連續蜂鳴)，使 Arduino 蜂鳴器與前端 GUI 警示同步響應。
-    *   **文件記錄**：將火災偵測能力評估、自動模式設計方案及通報機制討論記錄至 `docs/assessment/fire-detect.md`、`docs/assessment/auto-mode.md` 和 `docs/assessment/line-notify.md`。
-
-4.  **前端 GUI 視覺回饋**：
-    *   修改 `templates/index.html`，使 `AVOIDANCE` 按鈕在開啟時顯示綠色背景，關閉時顯示灰色背景，並預設為開啟狀態。
-
-5.  **後端日誌精簡**：修改 `main.py`，將 `uvicorn` 的日誌級別設定為 `warning`，減少不必要的 `INFO` 輸出。
-
-這些變更顯著提升了小車的自主導航能力、安全性、控制精準度及使用者體驗。
+### **測試**
+- 已通過手動控制測試 (`test_manual_control.sh`)。
+- 已通過自動避障模式場景測試 (`test_set_control_mode_avoidance.sh`)。
+- 後端 API 已通過單元測試。

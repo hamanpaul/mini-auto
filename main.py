@@ -2,23 +2,39 @@
 # 這是 FastAPI 應用程式的主入口點，負責啟動伺服器、載入 API 路由以及處理靜態檔案。
 
 import uvicorn # 導入 uvicorn，這是一個 ASGI 伺服器，用於運行 FastAPI 應用程式。
-from fastapi import FastAPI # 導入 FastAPI 類，用於創建 Web 應用程式。
+from fastapi import FastAPI, Request # 導入 FastAPI 類，用於創建 Web 應用程式。
 from fastapi.middleware.cors import CORSMiddleware # 導入 CORSMiddleware，用於處理跨來源資源共享 (CORS)。
 from fastapi.staticfiles import StaticFiles # 導入 StaticFiles，用於提供靜態檔案（如 CSS, JS, 圖片）。
-from fastapi.responses import HTMLResponse # 導入 HTMLResponse，用於返回 HTML 內容。
+from fastapi.responses import HTMLResponse, JSONResponse # 導入 HTMLResponse，用於返回 HTML 內容。
 import os # 導入 os 模組，用於與作業系統互動，例如處理檔案路徑。
 import importlib # 導入 importlib 模組，用於動態導入其他 Python 模組。
 import asyncio # 導入 asyncio 模組，用於非同步編程。
 import sys # 導入 sys 模組，提供對 Python 解釋器相關變數和函數的訪問。
 import subprocess # 導入 subprocess 模組，用於創建和管理子進程。
 import logging # 導入 logging 模組，用於日誌記錄。
+from pydantic import BaseModel # 用於定義請求模型的基類
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 # 導入 CameraStreamProcessor 類，它負責處理來自 ESP32-CAM 的影像串流。
 from src.py_rear.services.camera_stream_processor import CameraStreamProcessor
 # 導入 camera API 模組，以便在啟動時設定其影像處理器實例。
 from src.py_rear.apis import camera
 
-# --- 配置 ---
+# --- LINE Bot 配置 ---
+from line_setting import LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN
+
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+# 用於儲存機器人所在的群組 ID，使用 set 避免重複
+known_group_ids = set()
+
+class BroadcastMessage(BaseModel):
+    message: str
+
+# --- FastAPI 配置 ---
 # 這是 ESP32-S3-CAM 的 IP 位址。請務必將其替換為您實際 ESP32-S3-CAM 的 IP 位址。
 # 您可以在 Arduino 序列埠監控器中找到這個 IP 位址。
 ESP32_CAM_IP = "192.168.5.1" # <<<<< 這個 IP 位址通常來自 stream-server.html 或 ESP32-CAM 的輸出。
@@ -45,7 +61,16 @@ camera_processor_instance: CameraStreamProcessor = None
 # 使用 @app.on_event("startup") 裝飾器，定義一個在應用程式啟動時執行的非同步函數。
 @app.on_event("startup")
 async def startup_event():
-    global camera_processor_instance
+    global camera_processor_instance, known_group_ids
+    # 載入已知的群組 ID
+    try:
+        with open("group_ids.txt", "r") as f:
+            known_group_ids = {line.strip() for line in f if line.strip()}
+        print(f"成功從 group_ids.txt 載入 {len(known_group_ids)} 個群組 ID。")
+    except FileNotFoundError:
+        print("group_ids.txt 不存在，將創建一個新的。")
+        known_group_ids = set()
+
     # 在函數內部再次導入 camera 模組，確保在應用程式啟動時它已經可用。
     from src.py_rear.apis import camera as apis_camera
     # 創建 CameraStreamProcessor 的實例。
@@ -93,6 +118,71 @@ async def read_root():
     # 打開並讀取 templates 目錄下的 index.html 檔案。
     with open(os.path.join(os.path.dirname(__file__), "templates", "index.html"), "r", encoding="utf-8") as f:
         return f.read() # 返回 HTML 內容。
+
+@app.post("/broadcast")
+async def broadcast_message(message: BroadcastMessage):
+    """
+    廣播訊息給所有好友以及所有已知的群組。
+    """
+    try:
+        # 1. 對所有好友進行廣播
+        line_bot_api.broadcast(TextSendMessage(text=message.message))
+        print("訊息已成功廣播給所有好友。")
+
+        # 2. 對所有已知的群組進行推播
+        if not known_group_ids:
+            print("沒有已知的群組可以推播。")
+        else:
+            for group_id in known_group_ids:
+                try:
+                    line_bot_api.push_message(group_id, TextSendMessage(text=message.message))
+                    print(f"訊息已成功推播到群組: {group_id}")
+                except Exception as e:
+                    print(f"推播到群組 {group_id} 失敗: {e}")
+        
+        return JSONResponse(content={"status": "success"}, status_code=200)
+    
+    except Exception as e:
+        print(f"廣播或推播過程中發生錯誤: {e}")
+        return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
+
+@app.get("/line-webhook")
+async def line_webhook_verify():
+    return JSONResponse(content={"status": "success"}, status_code=200)
+
+@app.post("/line-webhook")
+async def line_webhook(request: Request):
+    # 獲取 X-Line-Signature 標頭
+    signature = request.headers.get('X-Line-Signature')
+    body = await request.body()
+
+    try:
+        handler.handle(body.decode('utf-8'), signature)
+    except InvalidSignatureError:
+        print("Invalid signature. Please check your channel secret.")
+        return JSONResponse(content={"status": "error", "message": "Invalid signature"}, status_code=400)
+    except Exception as e:
+        print(f"Error processing webhook: {e}")
+        return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
+
+    return JSONResponse(content={"status": "success"}, status_code=200)
+
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    """
+    處理文字訊息。
+    主要功能是當在群組中收到訊息時，記錄下群組 ID，以便未來廣播。
+    此函式不會自動回覆任何訊息。
+    """
+    # 檢查訊息來源是否是群組，並學習 Group ID
+    if hasattr(event.source, 'group_id') and event.source.group_id:
+        group_id = event.source.group_id
+        if group_id not in known_group_ids:
+            known_group_ids.add(group_id)
+            # 將新的群組 ID 附加到檔案中
+            with open("group_ids.txt", "a") as f:
+                f.write(group_id + "\n")
+            print(f"學到一個新的群組 ID: {group_id}，並已儲存。")
 
 # 判斷是否直接運行此腳本（而不是作為模組被導入）。
 if __name__ == "__main__":
