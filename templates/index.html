@@ -12,6 +12,7 @@
             color: #333;
             display: flex;
             flex-direction: column; /* Changed to column to stack main content and debug window */
+            flex-direction: column; /* Changed to column to stack main content and debug window */
             justify-content: center;
             align-items: center;
             min-height: 100vh;
@@ -124,6 +125,12 @@
         .function-buttons-container button:hover {
             background-color: #0056b3;
         }
+        .btn-on {
+            background-color: #28a745 !important; /* Green */
+        }
+        .btn-off {
+            background-color: #6c757d !important; /* Gray */
+        }
         .reset-button {
             background-color: #ff6600; /* Orange for reset button */
             color: white;
@@ -230,8 +237,8 @@
             <h2>Function Buttons</h2>
             <div class="function-buttons-container">
                 <h3>Control Mode: {{ currentControlMode }}</h3>
+                <button @click="toggleAvoidance()" :class="{ 'btn-on': isAvoidanceOn, 'btn-off': !isAvoidanceOn }">Avoidance</button>
                 <button @click="setControlMode('manual')">Set Manual Mode</button>
-                <button @click="setControlMode('avoidance')">Set Avoidance Mode</button>
                 <button @click="setControlMode('autonomous')">Set Autonomous Mode</button>
                 <button @click="registerCamera('192.168.0.147')">Register Camera (192.168.0.147)</button>
             </div>
@@ -256,11 +263,13 @@
             data: {
                 motorSpeed: 0,
                 directionAngle: 0,
+                rotationSpeed: 0, // 新增：旋轉速度
                 speedSliderValue: 60, // Default speed for keyboard control
                 esp32CamIp: null,
                 latest_data: {},
                 latest_command: {},
-                currentControlMode: 'manual',
+                currentControlMode: 'avoidance',
+                isAvoidanceOn: true, // Default to ON
                 debugLogs: [],
                 activeKeys: {},
                 streamUrl: '', // To hold the dynamic stream URL
@@ -340,7 +349,6 @@
                     });
                 },
                 handleKeyDown(event) {
-                    this.addLog(`handleKeyDown triggered for key: ${event.key.toLowerCase()}`, 'gui', 'debug');
                     if (event.repeat) return; // Ignore key repeat
                     const key = event.key.toLowerCase();
                     if (['w', 'a', 's', 'd'].includes(key)) {
@@ -362,6 +370,7 @@
                     this.addLog(`updateMotorControl: activeKeys state: ${JSON.stringify(this.activeKeys)}`, 'gui', 'debug');
                     let newMotorSpeed = 0;
                     let newDirectionAngle = 0;
+                    let newRotationSpeed = 0; // 新增：旋轉速度
 
                     if (this.activeKeys['w']) {
                         newMotorSpeed = this.speedSliderValue;
@@ -370,21 +379,24 @@
                         newMotorSpeed = this.speedSliderValue;
                         newDirectionAngle = 180; // Backward
                     } else if (this.activeKeys['a']) {
-                        newMotorSpeed = this.speedSliderValue;
-                        newDirectionAngle = 270; // Turn Left
+                        newRotationSpeed = this.speedSliderValue; // 左旋轉，使用正值
+                        newMotorSpeed = 0; // 純旋轉，速度為0
+                        newDirectionAngle = 0; // 方向不重要，但設為0
                     } else if (this.activeKeys['d']) {
-                        newMotorSpeed = this.speedSliderValue;
-                        newDirectionAngle = 90; // Turn Right
+                        newRotationSpeed = -this.speedSliderValue; // 右旋轉，使用負值
+                        newMotorSpeed = 0; // 純旋轉，速度為0
+                        newDirectionAngle = 0; // 方向不重要，但設為0
                     }
 
-                    this.addLog(`updateMotorControl: Calculated M=${newMotorSpeed}, D=${newDirectionAngle} (from speedSliderValue=${this.speedSliderValue})`, 'gui', 'debug');
+                    this.addLog(`updateMotorControl: Calculated M=${newMotorSpeed}, D=${newDirectionAngle}, R=${newRotationSpeed} (from speedSliderValue=${this.speedSliderValue})`, 'gui', 'debug');
 
                     // Only send if control state changes
-                    if (newMotorSpeed !== this.motorSpeed || newDirectionAngle !== this.directionAngle) {
+                    if (newMotorSpeed !== this.motorSpeed || newDirectionAngle !== this.directionAngle || newRotationSpeed !== this.rotationSpeed) {
                         this.motorSpeed = newMotorSpeed;
                         this.directionAngle = newDirectionAngle;
+                        this.rotationSpeed = newRotationSpeed; // 更新 rotationSpeed
                         this.sendManualControl();
-                        this.addLog(`Motor control updated: M=${this.motorSpeed}, D=${this.directionAngle}`, 'gui', 'debug');
+                        this.addLog(`Motor control updated: M=${this.motorSpeed}, D=${this.directionAngle}, R=${this.rotationSpeed}`, 'gui', 'debug');
                     }
                 },
                 async sendManualControl() {
@@ -399,7 +411,8 @@
                                 m: this.motorSpeed, // Motor Speed
                                 d: this.directionAngle, // Direction Angle
                                 a: 90, // Servo Angle (fixed for now)
-                                c: 0 // Command Byte (fixed for now)
+                                c: 0, // Command Byte (fixed for now)
+                                r: this.rotationSpeed // 新增：旋轉速度
                             })
                         });
                         const data = await response.json();
@@ -426,6 +439,11 @@
                         this.addLog(`Error setting control mode: ${error.message}`, 'gui', 'error');
                         console.error('Error setting control mode:', error);
                     }
+                },
+                toggleAvoidance() {
+                    this.isAvoidanceOn = !this.isAvoidanceOn;
+                    const mode = this.isAvoidanceOn ? 'avoidance' : 'manual';
+                    this.setControlMode(mode);
                 },
                 async registerCamera(ip) {
                     try {
@@ -544,6 +562,7 @@
             mounted() {
                 try {
                     this.addLog('Vue App mounting...', 'gui', 'debug');
+                    this.setControlMode('avoidance'); // Default to avoidance mode on
                     this.fetchData();
                     this.fetchBackendLogs();
                     setInterval(() => {

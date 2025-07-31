@@ -8,7 +8,7 @@
 
 
 // --- 常數定義 ---
-#define SERIAL_TEST_MODE 0 // 設定為 1 啟用 Serial 測試模式，0 禁用
+#define SERIAL_TEST_MODE 1 // 設定為 1 啟用 Serial 測試模式，0 禁用
 #define BUZZER_ENABLE 1
 #define IR_IMG_ENABLE 1
 #define I2C_ESP32_ENABLE 1
@@ -22,7 +22,7 @@ const size_t COMMAND_DATA_SIZE = sizeof(CommandData_t);
 
 // --- 全域變數 ---
 SensorData_t mySensorData; // 用於儲存 UNO 自己的感測器數據
-CommandData_t receivedCommand; // 用於儲存從 ESP32 接收的控制指令
+CommandData_t receivedCommand = {0, 0, 0, 90, 0}; // 用於儲存從 ESP32 接收的控制指令，初始化為停止狀態
 
 // --- 引腳定義 ---
 const static uint8_t ledPin = 2; // 定義 RGB LED 的資料引腳。
@@ -163,15 +163,13 @@ void controlBuzzer(uint8_t buzzer_code) { // 控制蜂鳴器。
       }
       break;
     case 3: // 連續蜂鳴 (切換)。
-      if (currentTime - lastBuzzerActionTime >= CONTINUOUS_BEEP_INTERVAL / 2) { // 如果距離上次動作時間超過連續蜂鳴間隔的一半。
-        if (buzzerState) { // 如果蜂鳴器正在發聲。
-          noTone(buzzerPin); // 停止發聲。
-        } else { // 如果蜂鳴器未發聲。
-          tone(buzzerPin, 1000); // 發出 1000 Hz 的聲音。
-        }
-        buzzerState = !buzzerState; // 切換蜂鳴器狀態。
-        lastBuzzerActionTime = currentTime; // 更新上次動作時間。
+      // Instead of toggling tone/noTone, we'll make short beeps
+      if (currentTime - lastBuzzerActionTime >= CONTINUOUS_BEEP_INTERVAL) { // Trigger a new beep cycle
+        tone(buzzerPin, 1000, SHORT_BEEP_DURATION); // Beep for a short duration
+        lastBuzzerActionTime = currentTime; // Reset timer for next beep
       }
+      // No need for noTone() here, as tone() with duration handles it.
+      // The interval ensures a pause between beeps.
       break;
     default:
       noTone(buzzerPin); // 預設情況下停止發聲。
@@ -310,7 +308,19 @@ void syncWithServer() { // 與 ESP32 進行數據同步
 
       // 執行指令
       controlBuzzer(receivedCommand.command_byte & 0b11);
-      motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, 0);
+      
+      // 新增避障邏輯
+      if (receivedCommand.is_avoidance_enabled) {
+        uint16_t distance_mm = ultrasound.GetDistance();
+        if (distance_mm > 0 && distance_mm < 200) { // 距離在 1mm 到 200mm (20cm) 之間
+          motor.move(180, 100, 0); // 後退
+        } else {
+          motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, receivedCommand.rotation_speed);
+        }
+      } else {
+        motor.move(receivedCommand.direction_angle, receivedCommand.motor_speed, receivedCommand.rotation_speed);
+      }
+      
       uint8_t override_led_code = (receivedCommand.command_byte >> 2) & 0b11;
       float battery_percentage = getBatteryPercentage();
       uint8_t final_led_code = override_led_code != 0 ? override_led_code : getLedStatusCode(error_code, false, battery_percentage);
@@ -318,6 +328,7 @@ void syncWithServer() { // 與 ESP32 進行數據同步
     }
   } else {
     Serial.print(F("E")); // 錯誤
+    motor.stop(); // I2C 讀取失敗，強制馬達停止
   }
 #endif
   isFirstSync = false; // 第一次同步完成

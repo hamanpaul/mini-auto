@@ -1,25 +1,30 @@
-feat(line): 整合 LINE 廣播通知與火災警報
+feat(核心功能): 全面優化車輛移動控制與自動駕駛模式
 
-本次更新主要整合了 LINE Messaging API，實現了當車輛偵測到高溫時，能主動發送廣播通知給所有使用者和群組的功能。
+### **變更摘要**
+本次提交專注於解決車輛在手動與自動模式下的核心問題，並提升了系統的整體穩定性與反應速度。
 
-### 主要變更項目：
+### **詳細變更**
+- **韌體 (Arduino & ESP32)**
+  - `arduino_uno.ino`:
+    - 調整了主控制迴圈的邏輯，優化了感測器數據的讀取與處理流程。
+    - 改善了自動避障模式的演算法，使其反應更為靈敏、路徑決策更佳。
+  - `esp32_cam.ino`:
+    - 調整影像傳輸參數，降低串流延遲，提升即時影像品質。
+  - `MotorController/`:
+    - 修正 `MotorController.cpp` 中導致馬達輸出不穩定的計算錯誤。
+    - 在 `VehicleData.h` 中新增了狀態旗標，用於更精確地同步車輛狀態。
 
-#### 後端 (main.py)
-- 新增 `/line-webhook` 端點，用於接收與驗證 LINE 平台的請求。
-- 新增 `/broadcast` 端點，允許外部 (如 GUI) 觸發廣播訊息。
-- 實作群組 ID 學習機制：當機器人被加入群組並收到訊息時，會自動記錄該群組 ID。
-- 建立 `group_ids.txt` 檔案，將學習到的群組 ID 永久儲存，避免伺服器重啟後遺失。
-- 伺服器啟動時會自動從 `group_ids.txt` 載入已知的群組。
-- 移除機器人收到訊息時的自動回覆行為，使其在群組中保持安靜。
+- **後端 (Python)**
+  - `apis/vehicle_api.py`:
+    - 更新 API 端點以匹配韌體的變更，特別是手動控制與模式切換的邏輯。
+  - `services/camera_stream_processor.py`:
+    - 增強了影像處理服務，以適應來自 ESP32 的新影像格式，並改善了物件偵測的初步邏輯。
 
-#### 前端 (templates/index.html)
-- 在 GUI 的 `fetchData` 函式中加入狀態監控邏輯。
-- 當 `thermalDanger` 旗標狀態改變時 (危險 <-> 安全)，會自動呼叫後端的 `/broadcast` API，發送對應的警報或解除通知。
+- **前端 (HTML)**
+  - `templates/index.html`:
+    - 更新了前端控制介面，新增了模式狀態顯示，並使手動控制按鈕反應更即時。
 
-#### 設定與測試
-- 新增 `line_setting.py` 檔案，方便使用者管理 LINE Channel Secret 和 Access Token。
-- 新增 `test_broadcast.py` 腳本，用於手動測試廣播功能。
-- 將 `line-bot-sdk` 加入 `requirements.txt`。
-
-#### ESP32 韌體 (esp32_cam.ino)
-- 修改 UDP 廣播的除錯邏輯，一旦成功獲取後端伺服器 IP，即停止列印相關的除錯訊息，保持序列埠監控器乾淨。
+### **測試**
+- 已通過手動控制測試 (`test_manual_control.sh`)。
+- 已通過自動避障模式場景測試 (`test_set_control_mode_avoidance.sh`)。
+- 後端 API 已通過單元測試。
