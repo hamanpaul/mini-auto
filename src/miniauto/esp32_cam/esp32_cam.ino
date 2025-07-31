@@ -54,6 +54,7 @@ CommandData_t lastSentCommandDataToUNO = {};
 bool isFirstI2CComm = true;
 bool httpSyncTimerStarted = false; // 標誌，指示 HTTP 同步定時器是否已啟動
 bool cameraRegistered = false; // 標誌，指示攝影機是否已註冊
+bool serverIpConfirmed = false; // 標誌，指示是否已確認伺服器 IP
 
 // 全域變數，用於儲存上次發送的感測器數據，以及第一次同步的標誌
 SensorData_t lastSentSensorData;
@@ -375,6 +376,8 @@ void setup() {
     Serial.print("UDP listening on port ");
     Serial.println(UDP_BROADCAST_PORT);
     udp.onPacket([](AsyncUDPPacket packet) {
+      if (serverIpConfirmed) return; // 如果已經確認 IP，則直接忽略後續的廣播包
+
       Serial.print("UDP Packet Type: ");
       Serial.print(packet.isBroadcast() ? "Broadcast" : packet.isMulticast() ? "Multicast" : "Unicast");
       Serial.print(", From: ");
@@ -405,6 +408,7 @@ void setup() {
           Serial.print(backendServerIp);
           Serial.print(", Port: ");
           Serial.println(backendServerPort);
+          serverIpConfirmed = true; // 標記為已確認
 
           // 如果 HTTP 同步定時器尚未啟動，則啟動它
           if (!httpSyncTimerStarted) {

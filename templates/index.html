@@ -271,6 +271,21 @@
                 thermalDanger: false // New property for thermal danger alert
             },
             methods: {
+                async sendLineNotification(message) {
+                    try {
+                        this.addLog(`Sending LINE notification: "${message}"`, 'gui', 'info');
+                        await fetch('/broadcast', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ message: message })
+                        });
+                        this.addLog('LINE notification sent successfully.', 'remote', 'info');
+                    } catch (error) {
+                        this.addLog(`Error sending LINE notification: ${error.message}`, 'gui', 'error');
+                    }
+                },
                 async toggleStream() {
                     this.addLog(`Toggle Stream button clicked. Current URL: '${this.streamUrl}'`, 'gui', 'debug');
                     if (this.streamUrl) {
@@ -495,12 +510,19 @@
                             this.currentControlMode = data.current_control_mode;
                         }
 
-                        // Update thermal danger status
-                        if (data.thermal_analysis && typeof data.thermal_analysis.is_danger !== 'undefined') {
-                            this.thermalDanger = data.thermal_analysis.is_danger;
-                        } else {
-                            this.thermalDanger = false; // Default to false if no data
+                        // --- Thermal Danger Logic with LINE Notification ---
+                        const oldThermalDanger = this.thermalDanger;
+                        const newThermalDanger = data.thermal_analysis && data.thermal_analysis.is_danger;
+
+                        if (newThermalDanger && !oldThermalDanger) {
+                            // State changed from safe to danger
+                            this.sendLineNotification('🔴 警告！偵測到高溫！');
+                        } else if (!newThermalDanger && oldThermalDanger) {
+                            // State changed from danger to safe
+                            this.sendLineNotification('✅ 高溫警報已解除。');
                         }
+                        this.thermalDanger = newThermalDanger;
+                        // --------------------------------------------------
 
                         // Fetch camera status for FPS
                         const cameraStatusResponse = await fetch('/camera/status');
