@@ -200,3 +200,6 @@ esp32-camera-repo/
 check_imports.py
 test_reports/
 commit_message.txt
+# Files generated during runtime
+group_ids.txt
+temp_commit_message.txt
