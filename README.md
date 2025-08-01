@@ -33,7 +33,14 @@ block-beta
     columns 1
     block esp["ESP32-CAM"]
       columns 2
-      uno["Arduino UNO"]
+      block uno["Arduino UNO"]
+        columns 6
+        ultra["超音波"]
+        motor["馬達"]
+        led["LED"]
+        buzzer["Buzzer"]
+        thermal["熱成像"]
+      end
     end
   end
 
