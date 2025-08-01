@@ -20,24 +20,17 @@ stateDiagram-v2
 
     MANUAL : 手動模式
     note left of MANUAL
-      - 接收來自 GUI 的 `/api/manual_control` 指令並儲存。
-      - 回應 `/api/sync` 時，回傳儲存的手動指令。
-      - `is_avoidance_enabled` 旗標為 0。
+      接收 GUI 指令並儲存；回應 /api/sync 回傳指令；避障旗標=0
     end note
 
     AVOIDANCE : 避障模式
     note right of AVOIDANCE
-      - 行為與手動模式相同。
-      - 主要區別在於回應 `/api/sync` 時，
-        將 `is_avoidance_enabled` 旗標設為 1，
-        以啟用 Arduino 上的超音波感測器避障。
+      與手動模式相同；回應 /api/sync 時避障旗標=1，啟用超音波感測器
     end note
 
     AUTONOMOUS : 自動駕駛模式
     note left of AUTONOMOUS
-      - 忽略手動控制指令。
-      - 回應 `/api/sync` 時，執行 `_generate_autonomous_commands()` 函式。
-      - 該函式根據視覺分析和熱感應數據自主生成控制指令。
+      忽略手動控制；回應 /api/sync 執行自動駕駛函式，依感測數據生成指令
     end note
 
     MANUAL --> AVOIDANCE : POST /api/set_control_mode("avoidance")
@@ -46,6 +39,8 @@ stateDiagram-v2
     AVOIDANCE --> AUTONOMOUS : POST /api/set_control_mode("autonomous")
     AUTONOMOUS --> MANUAL : POST /api/set_control_mode("manual")
     AUTONOMOUS --> AVOIDANCE : POST /api/set_control_mode("avoidance")
+
+
 ```
 
 ## 3. 核心服務與功能
