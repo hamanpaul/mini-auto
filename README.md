@@ -90,3 +90,29 @@ block-beta
 5.  **訪問 GUI**: 在瀏覽器中打開後端伺服器的 IP 位址，即可看到控制介面。
 
 詳細的 API 呼叫流程、系統架構和後端工作流程，請參考 `docs/` 目錄下的相關文件。
+
+6. **ESP32S3-CAM IDE setup**
+   
+    Board: ESP32S3 Dev Module
+
+    Tools Setting:
+
+   ```bash
+        USB CDC on Boot: disable
+        Flash Mode: QIO 80MHz
+        PSRAM: OPI PSRAM
+        Flash Size: 8MB
+        Partition Scheme: HugeAPP
+   ```
+
+8. **main.py initial flow**
+   ```bash
+   python.exe broadcast_server_ip.py
+   python.exe main.py b_ip
+   ngork.exe http 8000
+   ```
+
+   取得webhook後更新到line devlop messageAPI的webhook URL。
+   
+   ngork需自行安裝。
+   
