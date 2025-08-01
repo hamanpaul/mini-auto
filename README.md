@@ -12,20 +12,31 @@ Miniauto 是一個基於 Arduino UNO 和 ESP32-CAM 的小型自動化車輛專�
 block-beta
   columns 1
 
-  block user["User Space"]
-    gui["前端 GUI (Vue.js)"]
-    api["FastAPI Server"]
-    cam["Camera Processor (OpenCV)"]
-    notify["Notification Service"]
-  end
-  block vehicle["Vehicle Hardware"]
-    esp["ESP32-CAM"]
-    uno["Arduino UNO"]
-  end
 
   block external["External Services"]
-    line["LINE Notify API"]
+  columns 1
+   block line["LINE Notify API"]
+    end
   end
+
+  block user["User Space"]
+    columns 1
+    block gui["前端 GUI (Vue.js)"]
+        columns 4
+        api["FastAPI Server"]
+        cam["Camera Processor (OpenCV)"]
+        notify["Notification Service"]
+    end
+  end
+
+  block vehicle["Vehicle Hardware"]
+    columns 1
+    block esp["ESP32-CAM"]
+      columns 2
+      uno["Arduino UNO"]
+    end
+  end
+
 
   style user fill:#fff3cd
   style vehicle fill:#fff3cd
