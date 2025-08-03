@@ -3,35 +3,38 @@
 本文件詳細解釋了 Miniauto 專案中，從前端 GUI 操作到硬體執行的完整 API 呼叫流程，並涵蓋了影像串流、分析、LINE 通知以及關鍵的「時間差」同步概念。
 
 ```mermaid
-block-beta
-  block:scope:User Space {
-    block:gui["前端 GUI (Vue.js)"]
-  }
-  block:scope:Backend Server {
-    block:api["FastAPI Server"]
-    block:cam["Camera Processor (OpenCV)"]
-    block:notify["Notification Service"]
-  }
-  block:scope:Vehicle Hardware {
-    block:esp["ESP32-CAM"]
-    block:uno["Arduino UNO"]
-  }
-  block:scope:External Services {
-    block:line["LINE Notify API"]
-  }
+flowchart TB
+    subgraph UserSpace [User Space]
+        gui["前端 GUI (Vue.js)"]
+    end
 
-  gui -- "控制指令 (HTTP)" --> api
-  api -- "控制指令 (Sync)" --> esp
-  esp -- "控制指令 (I2C)" --> uno
-  uno -- "感測器數據 (I2C)" --> esp
-  esp -- "感測器數據 (HTTP)" --> api
+    subgraph Backend [Backend Server]
+        api["FastAPI Server"]
+        cam["Camera Processor (OpenCV)"]
+        notify["Notification Service"]
+    end
 
-  esp -- "MJPEG 影像串流" --> cam
-  cam -- "分析結果" --> api
-  api -- "代理串流/分析結果" --> gui
+    subgraph Vehicle [Vehicle Hardware]
+        esp["ESP32-CAM"]
+        uno["Arduino UNO"]
+    end
 
-  api -- "觸發警報" --> notify
-  notify -- "發送通知 (HTTP)" --> line
+    subgraph External [External Services]
+        line["LINE Notify API"]
+    end
+
+    %% Connections
+    gui --> api
+    api --> esp
+    esp --> uno
+    uno --> esp
+    esp --> api
+    esp --> cam
+    cam --> api
+    api --> gui
+    api --> notify
+    notify --> line
+
 ```
 
 ## 1. 核心架構與通訊模式
